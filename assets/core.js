@@ -115,12 +115,14 @@
 
   /* ---------- الحالة الافتراضية ---------- */
   // هويات الفرق (الاسم/اللون/الشعار مأخوذة من ملف الهويات)
+  // code = كلمة مرور رئيس النادي الافتراضية (يمكن للمشرف تغييرها)
   const TEAM_IDENTITIES = [
-    { name: "بؤرة", color: "#5e71e8", logo: "assets/teams/bura.png" },
-    { name: "الرواد", color: "#b3b6fc", logo: "assets/teams/rowad.png" },
-    { name: "الفهود", color: "#c9a24a", logo: "assets/teams/fuhood.png" },
+    { name: "بؤرة", color: "#5e71e8", logo: "assets/teams/bura.png", code: "1111" },
+    { name: "الرواد", color: "#b3b6fc", logo: "assets/teams/rowad.png", code: "2222" },
+    { name: "الفهود", color: "#c9a24a", logo: "assets/teams/fuhood.png", code: "3333" },
   ];
   App.TEAM_IDENTITIES = TEAM_IDENTITIES;
+  App.DEFAULT_ADMIN_CODE = "admin";
   const OLD_DEFAULT_TEAM_NAMES = /^الفريق (الأول|الثاني|الثالث)$/;
 
   function defaultState() {
@@ -129,18 +131,21 @@
       name: idn.name,
       color: idn.color,
       logo: idn.logo,
+      code: idn.code,
       budget: 0,
       captainId: null,
     }));
     return {
       version: 1,
-      club: { name: "دوري رواء", currency: "﷼", season: 1, week: 1 },
+      club: { name: "دوري رواء", currency: "﷼", season: 1, week: 1, adminCode: App.DEFAULT_ADMIN_CODE },
       teams,
       players: [],
       statDefs: App.DEFAULT_STATS.slice(),
       moneyRules: defaultMoneyRules(),
       ratingRules: defaultRatingRules(),
       matches: [],
+      fixtures: [],
+      lineups: {},
       ledger: [],
       ratingLog: [],
       market: { active: false, week: 1, lots: [] },
@@ -176,17 +181,21 @@
       const idn = TEAM_IDENTITIES[i];
       if (!idn) return;
       if (!t.logo) t.logo = idn.logo;
+      if (!t.code) t.code = idn.code;
       if (OLD_DEFAULT_TEAM_NAMES.test(t.name || "")) {
         t.name = idn.name;
         t.color = idn.color;
       }
     });
+    if (!s.club.adminCode) s.club.adminCode = App.DEFAULT_ADMIN_CODE;
     s.players = s.players || [];
     s.players.forEach((p) => {
       if (typeof p.rating !== "number") p.rating = App.RATING_START;
       if (!p.stats) p.stats = {};
     });
     s.matches = s.matches || [];
+    s.fixtures = s.fixtures || [];
+    s.lineups = s.lineups || {};
     s.ledger = s.ledger || [];
     s.ratingLog = s.ratingLog || [];
     s.market = s.market || d.market;
@@ -488,6 +497,87 @@
     save();
   }
   App.advanceWeek = advanceWeek;
+
+  /* ---------- المباريات القادمة (Fixtures) — يديرها المشرف ---------- */
+  // fixture: { id, homeTeamId, awayTeamId, week, datetime, note, status:"upcoming"|"done" }
+  App.getFixture = (id) => App.state.fixtures.find((f) => f.id === id) || null;
+  App.addFixture = (data) => {
+    const f = Object.assign(
+      { id: uid(), homeTeamId: null, awayTeamId: null, week: App.state.club.week, datetime: "", note: "", status: "upcoming" },
+      data
+    );
+    App.state.fixtures.push(f);
+    save();
+    return f;
+  };
+  App.updateFixture = (id, data) => {
+    const f = App.getFixture(id);
+    if (!f) return;
+    Object.assign(f, data);
+    save();
+  };
+  App.deleteFixture = (id) => {
+    App.state.fixtures = App.state.fixtures.filter((f) => f.id !== id);
+    // احذف تشكيلات هذه المباراة
+    Object.keys(App.state.lineups).forEach((k) => {
+      if (k.indexOf(id + ":") === 0) delete App.state.lineups[k];
+    });
+    save();
+  };
+  // المباريات القادمة التي يشارك فيها فريق معيّن
+  App.teamFixtures = (teamId) =>
+    App.state.fixtures.filter((f) => f.homeTeamId === teamId || f.awayTeamId === teamId);
+
+  /* ---------- الخطط والتشكيلات ---------- */
+  // كل خطة: قائمة خطوط اللاعبين (الحارس مضاف تلقائيًا). المجموع = 1 + مجموع الخطوط.
+  App.FORMATIONS = [
+    { id: "2-2-1", label: "2-2-1", lines: [2, 2, 1] },
+    { id: "2-1-2", label: "2-1-2", lines: [2, 1, 2] },
+    { id: "1-3-1", label: "1-3-1", lines: [1, 3, 1] },
+    { id: "3-2-1", label: "3-2-1", lines: [3, 2, 1] },
+    { id: "2-3-1", label: "2-3-1", lines: [2, 3, 1] },
+    { id: "3-1-2", label: "3-1-2", lines: [3, 1, 2] },
+    { id: "3-3-1", label: "3-3-1", lines: [3, 3, 1] },
+    { id: "3-2-2", label: "3-2-2", lines: [3, 2, 2] },
+    { id: "2-3-2", label: "2-3-2", lines: [2, 3, 2] },
+  ];
+  App.getFormation = (id) => App.FORMATIONS.find((f) => f.id === id) || App.FORMATIONS[0];
+  // إحداثيات المراكز (x,y) بنسب 0..1 — y=0 عند مرمى الفريق (أسفل) و1 عند مرمى الخصم (أعلى)
+  App.formationSlots = (formationId) => {
+    const f = App.getFormation(formationId);
+    const slots = [{ role: "حارس", x: 0.5, y: 0.09 }];
+    const L = f.lines.length;
+    f.lines.forEach((count, li) => {
+      const y = 0.30 + (L === 1 ? 0.3 : (li * 0.56) / (L - 1 || 1));
+      const roleName = li === L - 1 ? "هجوم" : li === 0 ? "دفاع" : "وسط";
+      for (let i = 0; i < count; i++) {
+        const x = (i + 1) / (count + 1);
+        slots.push({ role: roleName, x, y });
+      }
+    });
+    return slots;
+  };
+
+  // مفتاح التشكيلة = "fixtureId:teamId"
+  const lineupKey = (fixtureId, teamId) => fixtureId + ":" + teamId;
+  App.getLineup = (fixtureId, teamId) => App.state.lineups[lineupKey(fixtureId, teamId)] || null;
+  App.saveLineup = (fixtureId, teamId, data) => {
+    App.state.lineups[lineupKey(fixtureId, teamId)] = Object.assign(
+      { formationId: "2-2-1", assign: {}, updatedAt: Date.now() },
+      App.state.lineups[lineupKey(fixtureId, teamId)] || {},
+      data,
+      { updatedAt: Date.now() }
+    );
+    save();
+    return App.state.lineups[lineupKey(fixtureId, teamId)];
+  };
+
+  /* ---------- تحقق كلمات المرور (حماية على مستوى الواجهة) ---------- */
+  App.checkAdminCode = (code) => (code || "") === (App.state.club.adminCode || App.DEFAULT_ADMIN_CODE);
+  App.checkTeamCode = (teamId, code) => {
+    const t = App.getTeam(teamId);
+    return !!t && (code || "") === (t.code || "");
+  };
 
   /* ---------- استيراد / تصدير ---------- */
   App.exportData = () => JSON.stringify(App.state, null, 2);
