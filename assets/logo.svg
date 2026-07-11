@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none" aria-label="شعار دوري رواء">
-  <g stroke="#a435cf" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="50" cy="50" r="41"/>
-    <path d="M50 9 V91"/>
-    <path d="M9 50 H91"/>
-    <path d="M22 21 Q49 50 22 79"/>
-    <path d="M78 21 Q51 50 78 79"/>
-  </g>
-</svg>

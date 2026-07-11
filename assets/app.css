@@ -56,11 +56,9 @@ header.topbar {
 }
 .logo {
   width: 42px; height: 42px; border-radius: 12px;
-  display: grid; place-items: center;
-  background: #0b1330; border: 1px solid var(--line);
-  box-shadow: var(--shadow); overflow: hidden;
+  overflow: hidden; box-shadow: var(--shadow);
 }
-.logo svg, .logo img { width: 30px; height: 30px; display: block; }
+.logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .brand h1 { font-size: 18px; margin: 0; }
 .brand small { color: var(--muted); font-size: 12px; }
 .spacer { flex: 1; }

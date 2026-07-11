@@ -148,7 +148,7 @@
   function renderTopbar() {
     const c = App.state.club;
     return `<header class="topbar"><div class="inner">
-      <div class="logo"><img src="assets/logo.svg" alt="شعار دوري رواء"></div>
+      <div class="logo"><img src="assets/logo.png" alt="شعار دوري رواء"></div>
       <div class="brand"><h1>${esc(c.name)}</h1><small>الموسم ${c.season}</small></div>
       <div class="spacer"></div>
       <span class="week-pill" id="cloud-status" title="حالة المزامنة السحابية">…</span>
