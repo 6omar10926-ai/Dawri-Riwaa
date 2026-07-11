@@ -54,11 +54,14 @@ header.topbar {
   align-items: center;
   gap: 12px;
 }
-.logo {
-  width: 42px; height: 42px; border-radius: 12px;
-  overflow: hidden; box-shadow: var(--shadow);
+.brand-logo {
+  height: 46px; width: auto; max-width: 60vw; display: block;
+  border-radius: 10px; object-fit: contain;
 }
-.logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.season-pill {
+  background: var(--card-2); border: 1px solid var(--line);
+  padding: 5px 12px; border-radius: 999px; font-size: 12px; color: var(--muted);
+}
 .brand h1 { font-size: 18px; margin: 0; }
 .brand small { color: var(--muted); font-size: 12px; }
 .spacer { flex: 1; }
