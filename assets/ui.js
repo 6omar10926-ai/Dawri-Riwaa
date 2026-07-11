@@ -251,8 +251,6 @@
     return [TAB.dashboard, TAB.teams, TAB.matches, TAB.fixtures];
   }
   let route = "dashboard";
-  // نمط عرض النتائج: false = العرض الكامل • true = نمط التقييم المختصر (المباراة + تقييمات لاعبيها فقط)
-  let matchesRatingMode = false;
 
   function renderNav() {
     const tabs = roleTabs();
@@ -437,49 +435,13 @@
       ${body}`;
   }
 
-  // صفوف تقييمات لاعبي مباراة معيّنة (نمط التقييم المختصر)
-  function matchRatingRows(matchId) {
-    const logs = App.state.ratingLog.filter((l) => l.matchId === matchId);
-    if (!logs.length) return `<div class="small muted" style="margin-top:8px">لا تغييرات تقييم في هذه المباراة</div>`;
-    return (
-      `<div style="margin-top:10px">` +
-      logs
-        .map((l) => {
-          const p = App.getPlayer(l.playerId);
-          const name = p ? p.name : "لاعب محذوف";
-          const bd = l.breakdown.map((b) => `${esc(b.label)} ×${b.count}`).join("، ");
-          return `<div class="row between small" style="padding:5px 0;border-bottom:1px solid var(--line)">
-            <span><b>${esc(name)}</b>${bd ? ` <span class="muted">${bd}</span>` : ""}</span>
-            <span class="mono"><span class="muted">${l.oldRating}</span> ← <b>${l.newRating}</b>
-              <span class="amt ${l.applied < 0 ? "neg" : "pos"}">(${l.applied > 0 ? "+" : ""}${l.applied})</span></span>
-          </div>`;
-        })
-        .join("") +
-      `</div>`
-    );
-  }
-
   function viewMatches() {
     const matches = App.state.matches.slice().reverse();
-    const ratingMode = isAdmin() && matchesRatingMode;
     const list = matches.length
       ? matches
           .map((m) => {
             const h = App.getTeam(m.homeTeamId),
               a = App.getTeam(m.awayTeamId);
-            const scoreRow = `<div class="row between" style="margin-top:8px;font-size:16px;font-weight:700">
-                <span>${esc(h ? h.name : "؟")}</span>
-                <span class="mono" style="font-size:22px">${m.homeScore} - ${m.awayScore}</span>
-                <span>${esc(a ? a.name : "؟")}</span>
-              </div>`;
-            // نمط التقييم: المباراة + تقييمات لاعبيها فقط
-            if (ratingMode) {
-              return `<div class="card">
-                <div class="small muted">الأسبوع ${m.week} • ${new Date(m.date).toLocaleDateString("ar")}</div>
-                ${scoreRow}
-                ${matchRatingRows(m.id)}
-              </div>`;
-            }
             const money = App.state.ledger
               .filter((l) => l.refId === m.id)
               .reduce((s, l) => s + l.amount, 0);
@@ -492,7 +454,11 @@
                   <button class="btn sm danger" data-action="del-match" data-id="${m.id}">حذف</button>
                 </div>` : ""}
               </div>
-              ${scoreRow}
+              <div class="row between" style="margin-top:8px;font-size:16px;font-weight:700">
+                <span>${esc(h ? h.name : "؟")}</span>
+                <span class="mono" style="font-size:22px">${m.homeScore} - ${m.awayScore}</span>
+                <span>${esc(a ? a.name : "؟")}</span>
+              </div>
               <div class="small muted" style="margin-top:8px">${m.events.length} حدث • أُضيف ${fmtMoney(money)} ${esc(App.state.club.currency)}${ratedPlayers ? " • حُدّث تقييم " + ratedPlayers + " لاعب" : ""}</div>
             </div>`;
           })
@@ -501,10 +467,9 @@
 
     return `<div class="section-title"><h2>النتائج</h2>
         <div class="spacer"></div>
-        ${isAdmin() ? `<button class="btn sm ${ratingMode ? "gold" : ""}" data-action="toggle-rating-mode">⚡ نمط التقييم</button>` : ""}
+        ${isAdmin() ? `<button class="btn sm gold" data-action="live-match">🎬 تسجيل مباشر</button>` : ""}
         ${isAdmin() ? `<button class="btn primary sm" data-action="new-match">＋ تسجيل مباراة</button>` : ""}
       </div>
-      ${ratingMode ? `<div class="small muted" style="margin:-4px 2px 8px">عرض مختصر: كل مباراة وتقييمات لاعبيها فقط.</div>` : ""}
       <div class="grid">${list}</div>`;
   }
 
@@ -668,6 +633,7 @@
             const done = f.status === "done";
             const adminBtns = admin
               ? `<div class="row wrap" style="margin-top:10px;gap:6px">
+                   ${!done ? `<button class="btn sm gold" data-action="live-fixture" data-id="${f.id}">🎬 تسجيل مباشر</button>` : ""}
                    <button class="btn sm" data-action="build-lineup" data-id="${f.id}::${f.homeTeamId}">🧩 تشكيلة ${esc(App.getTeam(f.homeTeamId)?.name || "")}</button>
                    <button class="btn sm" data-action="build-lineup" data-id="${f.id}::${f.awayTeamId}">🧩 تشكيلة ${esc(App.getTeam(f.awayTeamId)?.name || "")}</button>
                    <button class="btn sm ghost" data-action="edit-fixture" data-id="${f.id}">تعديل</button>
@@ -1005,7 +971,7 @@
 
   // أفعال يقتصر تنفيذها على المشرف
   const ADMIN_ACTIONS = new Set([
-    "settings", "advance-week", "new-match", "edit-match", "del-match", "toggle-rating-mode", "awards",
+    "settings", "advance-week", "new-match", "edit-match", "del-match", "live-match", "live-fixture", "awards",
     "add-player", "add-player-to", "edit-player", "eval-player", "del-player",
     "edit-team", "open-market-random", "open-market-manual", "finalize-lot",
     "close-market", "export", "import",
@@ -1031,9 +997,12 @@
         if (!m) return toast("المباراة غير موجودة", "err");
         return openMatchForm(m);
       }
-      case "toggle-rating-mode":
-        matchesRatingMode = !matchesRatingMode;
-        return render();
+      case "live-match": return openLiveMatchPicker();
+      case "live-fixture": {
+        const f = App.getFixture(id);
+        if (!f) return toast("المباراة غير موجودة", "err");
+        return openLiveMatch(f.homeTeamId, f.awayTeamId, f.id);
+      }
       case "del-match":
         return confirmBox("حذف المباراة وإرجاع فلوسها وتقييماتها؟", () => { App.deleteMatch(id); toast("حُذفت المباراة"); render(); }, true);
       case "go-market": return go("market");
@@ -1451,6 +1420,183 @@
           }
           close();
           render();
+        };
+      },
+    });
+  }
+
+  /* ---------- التسجيل المباشر أثناء المباراة ---------- */
+  // خطوة 1: اختيار المباراة المتاحة (من القادمة) أو اختيار الفريقين يدويًا
+  function openLiveMatchPicker() {
+    if (App.state.teams.length < 2) return toast("تحتاج فريقين على الأقل", "err");
+    const upcoming = App.state.fixtures.filter((f) => f.status !== "done");
+    const fxHTML = upcoming.length
+      ? upcoming
+          .map((f) => {
+            const h = App.getTeam(f.homeTeamId),
+              a = App.getTeam(f.awayTeamId);
+            return `<button class="btn" style="width:100%;justify-content:space-between;margin-bottom:8px" data-fx="${f.id}">
+              <span>${esc(h?.name || "؟")} <span class="muted">ضد</span> ${esc(a?.name || "؟")}</span>
+              <span class="small muted">${fixtureWhen(f)}</span>
+            </button>`;
+          })
+          .join("")
+      : `<div class="small muted" style="margin-bottom:8px">لا توجد مباريات قادمة — اختر الفريقين يدويًا.</div>`;
+
+    const body = document.createElement("div");
+    body.innerHTML = `
+      <div class="section-title" style="margin:0 0 8px"><h2 style="font-size:15px">اختر مباراة قادمة</h2></div>
+      ${fxHTML}
+      <div class="section-title" style="margin:14px 0 8px"><h2 style="font-size:15px">أو ابدأ يدويًا</h2></div>
+      <div class="grid cols-2">
+        <label class="field"><span>الفريق الأول (يمين)</span><select id="lm-home">${teamOptions(App.state.teams[0].id)}</select></label>
+        <label class="field"><span>الفريق الثاني (يسار)</span><select id="lm-away">${teamOptions(App.state.teams[1].id)}</select></label>
+      </div>
+      <button class="btn primary" id="lm-start" style="width:100%">▶️ ابدأ التسجيل المباشر</button>`;
+
+    modal({
+      title: "🎬 تسجيل مباشر",
+      body,
+      foot: `<button class="btn ghost" data-close>إلغاء</button>`,
+      onOpen(root, close) {
+        body.querySelectorAll("[data-fx]").forEach((b) => {
+          b.onclick = () => {
+            const f = App.getFixture(b.getAttribute("data-fx"));
+            if (!f) return;
+            close();
+            openLiveMatch(f.homeTeamId, f.awayTeamId, f.id);
+          };
+        });
+        body.querySelector("#lm-start").onclick = () => {
+          const home = body.querySelector("#lm-home").value;
+          const away = body.querySelector("#lm-away").value;
+          if (home === away) return toast("اختر فريقين مختلفين", "err");
+          close();
+          openLiveMatch(home, away, null);
+        };
+      },
+    });
+  }
+
+  // خطوة 2: لوحة الإدخال المباشر — معايير التقييم فوق، واللاعبون (فريق يمين وفريق يسار) بأزرار ＋/－
+  function openLiveMatch(homeId, awayId, fixtureId) {
+    const home = App.getTeam(homeId),
+      away = App.getTeam(awayId);
+    if (!home || !away) return toast("فريق غير موجود", "err");
+    const events = []; // {type, teamId, playerId}
+    let activeType = "goal"; // الحدث المختار حاليًا من معايير التقييم
+
+    const actionLabel = (key) => App.matchAction(key)?.label || key;
+    const countFor = (playerId) =>
+      events.filter((e) => e.playerId === playerId && e.type === activeType).length;
+    const totalFor = (playerId) => events.filter((e) => e.playerId === playerId).length;
+
+    function addEvent(playerId, teamId) {
+      events.push({ type: activeType, teamId, playerId });
+    }
+    function removeEvent(playerId) {
+      for (let i = events.length - 1; i >= 0; i--) {
+        if (events[i].playerId === playerId && events[i].type === activeType) {
+          events.splice(i, 1);
+          return;
+        }
+      }
+    }
+
+    // بطاقة لاعب مصغّرة مع أزرار ＋/－
+    function playerRow(p, teamId) {
+      const c = countFor(p.id);
+      const tot = totalFor(p.id);
+      const photo = p.photo
+        ? `<img class="live-photo" src="${p.photo}" alt="">`
+        : `<div class="live-photo ph">👤</div>`;
+      return `<div class="live-pl${c ? " has" : ""}">
+        <button class="live-btn minus" data-minus="${p.id}" ${c ? "" : "disabled"}>－</button>
+        <div class="live-pl-info">
+          ${photo}
+          <div class="live-pl-txt">
+            <div class="nm">${esc(p.name)}${p.number ? ` <span class="muted">#${esc(p.number)}</span>` : ""}</div>
+            <div class="ct">${esc(actionLabel(activeType))}: <b>${c}</b>${tot ? ` <span class="muted">• الكل ${tot}</span>` : ""}</div>
+          </div>
+        </div>
+        <button class="live-btn plus" data-plus="${p.id}" data-team="${teamId}">＋</button>
+      </div>`;
+    }
+
+    function teamColumn(team) {
+      const players = App.teamPlayers(team.id);
+      const rows = players.length
+        ? players.map((p) => playerRow(p, team.id)).join("")
+        : `<div class="small muted" style="padding:8px">لا لاعبون في هذا الفريق</div>`;
+      return `<div class="live-col">
+        <div class="live-col-head" style="border-color:${team.color}">
+          ${teamCrestHTML(team)} <b>${esc(team.name)}</b>
+        </div>
+        ${rows}
+      </div>`;
+    }
+
+    // شريط معايير التقييم (قابل للاختيار) — يظهر الأثر (فلوس/نقاط تقييم)
+    function actionsBar() {
+      return App.MATCH_ACTIONS.map((a) => {
+        const bits = [];
+        if (a.money && App.state.moneyRules[a.key]) bits.push(fmtShort(App.state.moneyRules[a.key]));
+        if (a.ratingKey && typeof a.ratingKey !== "function") {
+          const pts = App.state.ratingRules[a.ratingKey] || 0;
+          if (pts) bits.push((pts > 0 ? "+" : "") + pts);
+        } else if (typeof a.ratingKey === "function") bits.push("±");
+        return `<button class="live-chip${a.key === activeType ? " on" : ""}" data-act="${a.key}">
+          ${esc(a.label)}${bits.length ? ` <span class="tag">${bits.join(" / ")}</span>` : ""}
+        </button>`;
+      }).join("");
+    }
+
+    const body = document.createElement("div");
+    function renderLive() {
+      const { home: hs, away: as } = App.computeMatchScores({ homeTeamId: homeId, awayTeamId: awayId, events });
+      body.innerHTML = `
+        <div class="live-score">
+          <span>${esc(home.name)}</span>
+          <span class="sc mono">${hs} - ${as}</span>
+          <span>${esc(away.name)}</span>
+        </div>
+        <div class="live-hint small muted">اختر نوع الحدث ثم اضغط ＋ عند اللاعب. (－ للتراجع)</div>
+        <div class="live-actions">${actionsBar()}</div>
+        <div class="grid cols-2 live-cols">
+          ${teamColumn(home)}
+          ${teamColumn(away)}
+        </div>
+        <div class="small muted" style="margin-top:10px">إجمالي الأحداث المُسجّلة: <b>${events.length}</b></div>`;
+
+      body.querySelectorAll("[data-act]").forEach((b) => {
+        b.onclick = () => { activeType = b.getAttribute("data-act"); renderLive(); };
+      });
+      body.querySelectorAll("[data-plus]").forEach((b) => {
+        b.onclick = () => { addEvent(b.getAttribute("data-plus"), b.getAttribute("data-team")); renderLive(); };
+      });
+      body.querySelectorAll("[data-minus]").forEach((b) => {
+        b.onclick = () => { removeEvent(b.getAttribute("data-minus")); renderLive(); };
+      });
+    }
+    renderLive();
+
+    modal({
+      title: "🎬 " + home.name + " ضد " + away.name,
+      body,
+      foot: `<button class="btn primary" data-save>💾 حفظ المباراة</button><button class="btn ghost" data-cancel>إلغاء</button>`,
+      onOpen(root, close) {
+        $("[data-save]", root).onclick = () => {
+          if (!events.length) return toast("لم تُسجَّل أي أحداث بعد", "err");
+          App.recordMatch({ homeTeamId: homeId, awayTeamId: awayId, events });
+          if (fixtureId) App.updateFixture(fixtureId, { status: "done" });
+          toast("سُجّلت المباراة وحُدّثت الميزانيات والتقييمات", "ok");
+          close();
+          go("matches");
+        };
+        $("[data-cancel]", root).onclick = () => {
+          if (events.length)
+            return confirmBox("إلغاء المباراة المباشرة؟ ستفقد الأحداث غير المحفوظة.", close, true);
+          close();
         };
       },
     });
