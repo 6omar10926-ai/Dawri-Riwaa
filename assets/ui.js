@@ -445,6 +445,7 @@
             const money = App.state.ledger
               .filter((l) => l.refId === m.id)
               .reduce((s, l) => s + l.amount, 0);
+            const ratedPlayers = App.state.ratingLog.filter((l) => l.matchId === m.id).length;
             return `<div class="card">
               <div class="row between">
                 <div class="small muted">الأسبوع ${m.week} • ${new Date(m.date).toLocaleDateString("ar")}</div>
@@ -455,7 +456,7 @@
                 <span class="mono" style="font-size:22px">${m.homeScore} - ${m.awayScore}</span>
                 <span>${esc(a ? a.name : "؟")}</span>
               </div>
-              <div class="small muted" style="margin-top:8px">${m.events.length} حدث • أُضيف ${fmtMoney(money)} ${esc(App.state.club.currency)}</div>
+              <div class="small muted" style="margin-top:8px">${m.events.length} حدث • أُضيف ${fmtMoney(money)} ${esc(App.state.club.currency)}${ratedPlayers ? " • حُدّث تقييم " + ratedPlayers + " لاعب" : ""}</div>
             </div>`;
           })
           .join("")
@@ -1300,15 +1301,42 @@
     const events = [];
     const teams = App.state.teams;
 
+    // لاحقة مختصرة لخيار نوع الحدث: الفلوس و/أو نقاط التقييم
+    function actionOptionTag(a) {
+      const bits = [];
+      if (a.money && App.state.moneyRules[a.key]) bits.push(fmtShort(App.state.moneyRules[a.key]));
+      if (a.ratingKey) {
+        if (typeof a.ratingKey === "function") bits.push("تقييم");
+        else {
+          const pts = App.state.ratingRules[a.ratingKey] || 0;
+          if (pts) bits.push("تقييم " + (pts > 0 ? "+" : "") + pts);
+        }
+      }
+      return bits.length ? " (" + bits.join(" • ") + ")" : "";
+    }
+
+    // وصف أثر الحركة: الفلوس (إن وُجدت) وتغيّر التقييم (إن ارتبطت بلاعب)
+    function eventEffectHTML(ev, pl) {
+      const parts = [];
+      const money = App.state.moneyRules[ev.type];
+      if (App.matchAction(ev.type)?.money && money) parts.push(`<span class="muted mono">${fmtMoney(money)}</span>`);
+      if (pl) {
+        const rKey = App.actionRatingKey(App.matchAction(ev.type), pl);
+        const pts = rKey ? App.state.ratingRules[rKey] || 0 : 0;
+        if (pts) parts.push(`<span class="mono" style="color:${pts < 0 ? "var(--danger)" : "var(--brand)"}">التقييم ${pts > 0 ? "+" : ""}${pts}</span>`);
+      }
+      return parts.length ? " " + parts.join(" • ") : "";
+    }
+
     function eventsHTML() {
       if (!events.length) return `<div class="small muted">لا أحداث بعد</div>`;
       return events
         .map((ev, i) => {
-          const def = App.EVENTS.find((e) => e.key === ev.type);
+          const def = App.matchAction(ev.type);
           const t = App.getTeam(ev.teamId);
           const pl = ev.playerId ? App.getPlayer(ev.playerId) : null;
           return `<div class="row between small" style="padding:6px 0;border-bottom:1px solid var(--line)">
-            <span>${def.label} — <b style="color:${t?.color}">${esc(t?.name)}</b>${pl ? " • " + esc(pl.name) : ""} <span class="muted mono">(${fmtMoney(App.state.moneyRules[ev.type])})</span></span>
+            <span>${def ? esc(def.label) : esc(ev.type)} — <b style="color:${t?.color}">${esc(t?.name)}</b>${pl ? " • " + esc(pl.name) : ""}${eventEffectHTML(ev, pl)}</span>
             <button class="btn sm danger" data-ev-del="${i}">×</button>
           </div>`;
         })
@@ -1329,10 +1357,11 @@
         <div class="card" style="background:#0e1830">
           <div class="small muted" style="margin-bottom:8px">إضافة حدث</div>
           <div class="grid cols-2">
-            <label class="field"><span>النوع</span><select id="ev-type">${App.EVENTS.map((e) => `<option value="${e.key}">${e.label} (${fmtShort(App.state.moneyRules[e.key])})</option>`).join("")}</select></label>
+            <label class="field"><span>النوع</span><select id="ev-type">${App.MATCH_ACTIONS.map((a) => `<option value="${a.key}">${esc(a.label)}${actionOptionTag(a)}</option>`).join("")}</select></label>
             <label class="field"><span>الفريق</span><select id="ev-team">${teamOptions(evTeamId)}</select></label>
           </div>
-          <label class="field"><span>اللاعب (اختياري)</span><select id="ev-player"><option value="">—</option>${evPlayers.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select></label>
+          <label class="field"><span>اللاعب</span><select id="ev-player"><option value="">—</option>${evPlayers.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select></label>
+          <div class="small muted" style="margin-top:4px">اختيار لاعب يُحدّث تقييمه تلقائيًا حسب نوع الحدث.</div>
           <button class="btn sm primary" id="ev-add">＋ أضف الحدث</button>
         </div>
         <div class="section-title" style="margin:12px 0 6px"><h2 style="font-size:15px">الأحداث</h2></div>
@@ -1365,7 +1394,7 @@
           const awayTeamId = body.querySelector("#mt-away").value;
           if (homeTeamId === awayTeamId) return toast("اختر فريقين مختلفين", "err");
           App.recordMatch({ homeTeamId, awayTeamId, events });
-          toast("سُجّلت المباراة وحُدّثت الميزانيات", "ok");
+          toast("سُجّلت المباراة وحُدّثت الميزانيات والتقييمات", "ok");
           close();
           render();
         };

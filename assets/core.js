@@ -113,6 +113,40 @@
     return r;
   };
 
+  /* ---------- حركات المباراة (مصدر موحّد) ----------
+     كل حركة تُسجّل مرة واحدة في نموذج المباراة، وقد:
+       • تسجّل هدفًا في النتيجة (scores)
+       • تُضيف/تخصم فلوسًا للفريق (المفتاح نفسه موجود في moneyRules)
+       • تغيّر تقييم اللاعب المرتبط بها (ratingKey — قد تكون دالة تفرّق بين الحارس واللاعب)
+     بهذا يكفي إدخال الهدف/التصدّي مرة واحدة ليظهر في النتيجة ويُحدّث تقييم اللاعب معًا. */
+  const GK = App.POSITIONS[0]; // "حارس"
+  App.MATCH_ACTIONS = [
+    { key: "goal",         label: "هدف",              scores: true,  money: true,  ratingKey: "goal" },
+    { key: "penaltyGoal",  label: "هدف بلنتي",        scores: true,  money: true,  ratingKey: "goal" },
+    { key: "assist",       label: "صناعة",                           ratingKey: "assist" },
+    { key: "pass",         label: "تمرير ناجح",                      ratingKey: "pass" },
+    { key: "interception", label: "قطع الكرة",                       ratingKey: "interception" },
+    { key: "save",         label: "تصدّي",                          money: true,  ratingKey: (p) => (p && p.position === GK ? "gkSave" : "outfieldSave") },
+    { key: "penaltySave",  label: "تصدّي بلنتي",       money: true,  ratingKey: "gkSave" },
+    { key: "freeKickSave", label: "تصدّي فاول",        money: true,  ratingKey: "gkSave" },
+    { key: "cleanSheet",   label: "شباك نظيفة",                      ratingKey: "cleanSheet" },
+    { key: "yellow",       label: "كرت أصفر",          money: true,  ratingKey: "yellow" },
+    { key: "red",          label: "كرت أحمر",          money: true,  ratingKey: "red" },
+    { key: "nutmeg",       label: "تسطيح",             money: true },
+    { key: "ownGoal",      label: "هدف عكسي",                        ratingKey: "ownGoal" },
+    { key: "concededGoal", label: "استقبال هدف",                     ratingKey: "concededGoal" },
+    { key: "missedChance", label: "إضاعة فرصة محققة",                 ratingKey: "missedChance" },
+    { key: "causePenalty", label: "تسبب بلنتي",                      ratingKey: "causePenalty" },
+    { key: "seriousFoul",  label: "تسبب بفاول خطير",                  ratingKey: "seriousFoul" },
+    { key: "generalFoul",  label: "تسبب بخطأ عمومًا",                 ratingKey: "generalFoul" },
+  ];
+  App.matchAction = (key) => App.MATCH_ACTIONS.find((a) => a.key === key) || null;
+  // مفتاح قاعدة التقييم لحركة مباراة معيّنة (يراعي مركز اللاعب)
+  App.actionRatingKey = (action, player) => {
+    if (!action || !action.ratingKey) return null;
+    return typeof action.ratingKey === "function" ? action.ratingKey(player) : action.ratingKey;
+  };
+
   /* ---------- الحالة الافتراضية ---------- */
   // هويات الفرق (الاسم/اللون/الشعار مأخوذة من ملف الهويات)
   // code = كلمة مرور رئيس النادي الافتراضية (يمكن للمشرف تغييرها)
@@ -251,7 +285,8 @@
 
   /* ---------- تقييم اللاعب (حساب الطاقة) ---------- */
   // counts: خريطة { ruleKey: عدد المرات }. تُحسب النقاط وتُطبّق على التقييم مع حفظ الحسبة.
-  function evaluatePlayer(playerId, counts, note) {
+  // opts (اختياري): { week, matchId } لربط التقييم بمباراة معيّنة.
+  function applyRatingCounts(playerId, counts, note, opts) {
     const p = App.getPlayer(playerId);
     if (!p) return null;
     const rules = App.state.ratingRules;
@@ -265,13 +300,14 @@
       delta += subtotal;
       breakdown.push({ key: rule.key, label: rule.label, count: c, pts, subtotal });
     });
+    if (!breakdown.length) return null;
     const oldRating = App.playerOverall(p);
     const newRating = clamp(oldRating + delta, App.RATING_MIN, App.RATING_MAX);
     p.rating = newRating;
     App.state.ratingLog.push({
       id: uid(),
       playerId,
-      week: App.state.club.week,
+      week: (opts && opts.week) || App.state.club.week,
       date: new Date().toISOString(),
       delta,
       applied: newRating - oldRating, // الفرق الفعلي بعد السقف
@@ -279,11 +315,51 @@
       newRating,
       breakdown,
       note: note || "",
+      matchId: (opts && opts.matchId) || null,
     });
-    save();
     return { oldRating, newRating, delta, breakdown };
   }
+  App.applyRatingCounts = applyRatingCounts;
+
+  function evaluatePlayer(playerId, counts, note) {
+    const res = applyRatingCounts(playerId, counts, note, null);
+    if (res) save();
+    return res;
+  }
   App.evaluatePlayer = evaluatePlayer;
+
+  // يطبّق تقييمات المباراة تلقائيًا: يجمع أحداث كل لاعب في عملية تقييم واحدة مربوطة بالمباراة.
+  function applyMatchRatings(match) {
+    const byPlayer = {}; // playerId -> { ratingRuleKey: count }
+    match.events.forEach((ev) => {
+      if (!ev.playerId) return;
+      const action = App.matchAction(ev.type);
+      const p = App.getPlayer(ev.playerId);
+      const rKey = App.actionRatingKey(action, p);
+      if (!rKey || !p) return;
+      (byPlayer[ev.playerId] = byPlayer[ev.playerId] || {});
+      byPlayer[ev.playerId][rKey] = (byPlayer[ev.playerId][rKey] || 0) + 1;
+    });
+    const home = App.getTeam(match.homeTeamId);
+    const away = App.getTeam(match.awayTeamId);
+    const note = "مباراة: " + (home ? home.name : "؟") + " ضد " + (away ? away.name : "؟");
+    Object.keys(byPlayer).forEach((pid) => {
+      applyRatingCounts(pid, byPlayer[pid], note, { week: match.week, matchId: match.id });
+    });
+  }
+  App.applyMatchRatings = applyMatchRatings;
+
+  // إلغاء تقييمات مباراة (عند حذفها): يعيد التقييم بطرح الفرق المطبّق ويحذف سجلّاتها.
+  function reverseMatchRatings(matchId) {
+    App.state.ratingLog
+      .filter((l) => l.matchId === matchId)
+      .forEach((l) => {
+        const p = App.getPlayer(l.playerId);
+        if (p) p.rating = clamp(App.playerOverall(p) - (l.applied || 0), App.RATING_MIN, App.RATING_MAX);
+      });
+    App.state.ratingLog = App.state.ratingLog.filter((l) => l.matchId !== matchId);
+  }
+  App.reverseMatchRatings = reverseMatchRatings;
 
   // تعديل يدوي مباشر للتقييم (بدون أحداث)
   function adjustRating(playerId, newValue, note) {
@@ -351,7 +427,7 @@
     let home = 0,
       away = 0;
     match.events.forEach((ev) => {
-      const def = App.EVENTS.find((e) => e.key === ev.type);
+      const def = App.matchAction(ev.type);
       if (def && def.scores) {
         if (ev.teamId === match.homeTeamId) home++;
         else if (ev.teamId === match.awayTeamId) away++;
@@ -377,7 +453,7 @@
     match.events.forEach((ev) => {
       const amount = rules[ev.type] || 0;
       if (!amount) return;
-      const def = App.EVENTS.find((e) => e.key === ev.type);
+      const def = App.matchAction(ev.type);
       const pl = ev.playerId ? App.getPlayer(ev.playerId) : null;
       const label = def ? def.label : ev.type;
       const who = pl ? " — " + pl.name : "";
@@ -397,6 +473,8 @@
     }
 
     App.state.matches.push(match);
+    // تحديث تقييمات اللاعبين من أحداث المباراة (إدخال واحد → نتيجة + تقييم)
+    applyMatchRatings(match);
     save();
     return match;
   }
@@ -404,6 +482,7 @@
 
   function deleteMatch(id) {
     reverseByRef("match", id);
+    reverseMatchRatings(id);
     App.state.matches = App.state.matches.filter((m) => m.id !== id);
     save();
   }
