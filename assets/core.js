@@ -74,6 +74,45 @@
 
   App.POSITIONS = ["حارس", "دفاع", "وسط", "هجوم"];
 
+  /* ---------- معايير التقييم (طاقة اللاعب) ---------- */
+  App.RATING_START = 50;
+  App.RATING_MIN = 0;
+  App.RATING_MAX = 99;
+
+  App.RATING_RULES = {
+    general: [
+      { key: "goal", label: "هدف", pts: 10 },
+      { key: "pass", label: "تمرير ناجح", pts: 1 },
+      { key: "assist", label: "صناعة", pts: 7 },
+      { key: "interception", label: "قطع الكرة", pts: 2 },
+      { key: "outfieldSave", label: "تصدّي كرة على المرمى (غير الحارس)", pts: 5 },
+    ],
+    goalkeeper: [
+      { key: "gkSave", label: "تصدّي ناجح", pts: 3 },
+      { key: "cleanSheet", label: "شباك نظيفة", pts: 10 },
+    ],
+    deductions: [
+      { key: "yellow", label: "بطاقة صفراء", pts: -5 },
+      { key: "red", label: "بطاقة حمراء", pts: -13 },
+      { key: "causePenalty", label: "تسبب بلنتي", pts: -7 },
+      { key: "ownGoal", label: "هدف عكسي", pts: -10 },
+      { key: "missedChance", label: "إضاعة فرصة محققة", pts: -4 },
+      { key: "seriousFoul", label: "تسبب بفاول خطير", pts: -4 },
+      { key: "generalFoul", label: "تسبب بخطأ عمومًا", pts: -2 },
+      { key: "concededGoal", label: "استقبال هدف", pts: -3 },
+    ],
+  };
+  App.ratingRuleList = () => [
+    ...App.RATING_RULES.general,
+    ...App.RATING_RULES.goalkeeper,
+    ...App.RATING_RULES.deductions,
+  ];
+  const defaultRatingRules = () => {
+    const r = {};
+    App.ratingRuleList().forEach((e) => (r[e.key] = e.pts));
+    return r;
+  };
+
   /* ---------- الحالة الافتراضية ---------- */
   const TEAM_COLORS = ["#e11d48", "#2563eb", "#16a34a"];
   function defaultState() {
@@ -91,8 +130,10 @@
       players: [],
       statDefs: App.DEFAULT_STATS.slice(),
       moneyRules: defaultMoneyRules(),
+      ratingRules: defaultRatingRules(),
       matches: [],
       ledger: [],
+      ratingLog: [],
       market: { active: false, week: 1, lots: [] },
     };
   }
@@ -115,11 +156,17 @@
     const d = defaultState();
     s.club = Object.assign(d.club, s.club || {});
     s.moneyRules = Object.assign(defaultMoneyRules(), s.moneyRules || {});
+    s.ratingRules = Object.assign(defaultRatingRules(), s.ratingRules || {});
     if (!Array.isArray(s.statDefs) || !s.statDefs.length) s.statDefs = d.statDefs;
     s.teams = s.teams || d.teams;
     s.players = s.players || [];
+    s.players.forEach((p) => {
+      if (typeof p.rating !== "number") p.rating = App.RATING_START;
+      if (!p.stats) p.stats = {};
+    });
     s.matches = s.matches || [];
     s.ledger = s.ledger || [];
+    s.ratingLog = s.ratingLog || [];
     s.market = s.market || d.market;
     return s;
   }
@@ -140,9 +187,13 @@
   App.teamPlayers = (teamId) => App.state.players.filter((p) => p.teamId === teamId);
   App.freeAgents = () => App.state.players.filter((p) => !p.teamId);
 
-  App.playerOverall = (p) => {
+  // تقييم اللاعب = طاقته (يبدأ من 50، سقف 99). هذا الرقم الكبير على البطاقة.
+  App.playerOverall = (p) =>
+    typeof p.rating === "number" ? p.rating : App.RATING_START;
+
+  // متوسط المهارات الوصفية الاختيارية (لا يؤثر على التقييم)
+  App.playerAttrAvg = (p) => {
     const defs = App.state.statDefs;
-    if (!defs.length) return 0;
     let sum = 0,
       count = 0;
     defs.forEach((d) => {
@@ -152,8 +203,70 @@
         count++;
       }
     });
-    return count ? Math.round(sum / count) : 0;
+    return count ? Math.round(sum / count) : null;
   };
+
+  /* ---------- تقييم اللاعب (حساب الطاقة) ---------- */
+  // counts: خريطة { ruleKey: عدد المرات }. تُحسب النقاط وتُطبّق على التقييم مع حفظ الحسبة.
+  function evaluatePlayer(playerId, counts, note) {
+    const p = App.getPlayer(playerId);
+    if (!p) return null;
+    const rules = App.state.ratingRules;
+    const breakdown = [];
+    let delta = 0;
+    App.ratingRuleList().forEach((rule) => {
+      const c = parseInt(counts[rule.key], 10) || 0;
+      if (!c) return;
+      const pts = rules[rule.key] || 0;
+      const subtotal = c * pts;
+      delta += subtotal;
+      breakdown.push({ key: rule.key, label: rule.label, count: c, pts, subtotal });
+    });
+    const oldRating = App.playerOverall(p);
+    const newRating = clamp(oldRating + delta, App.RATING_MIN, App.RATING_MAX);
+    p.rating = newRating;
+    App.state.ratingLog.push({
+      id: uid(),
+      playerId,
+      week: App.state.club.week,
+      date: new Date().toISOString(),
+      delta,
+      applied: newRating - oldRating, // الفرق الفعلي بعد السقف
+      oldRating,
+      newRating,
+      breakdown,
+      note: note || "",
+    });
+    save();
+    return { oldRating, newRating, delta, breakdown };
+  }
+  App.evaluatePlayer = evaluatePlayer;
+
+  // تعديل يدوي مباشر للتقييم (بدون أحداث)
+  function adjustRating(playerId, newValue, note) {
+    const p = App.getPlayer(playerId);
+    if (!p) return;
+    const oldRating = App.playerOverall(p);
+    const nv = clamp(parseInt(newValue, 10) || 0, App.RATING_MIN, App.RATING_MAX);
+    p.rating = nv;
+    App.state.ratingLog.push({
+      id: uid(),
+      playerId,
+      week: App.state.club.week,
+      date: new Date().toISOString(),
+      delta: nv - oldRating,
+      applied: nv - oldRating,
+      oldRating,
+      newRating: nv,
+      breakdown: [],
+      note: note || "تعديل يدوي",
+    });
+    save();
+  }
+  App.adjustRating = adjustRating;
+
+  App.playerRatingLog = (playerId) =>
+    App.state.ratingLog.filter((l) => l.playerId === playerId).slice().reverse();
 
   /* ---------- المعاملات المالية (مصدر الحقيقة الوحيد للميزانية) ---------- */
   // كل تغيير على ميزانية فريق يمر من هنا: يحدّث budget ويضيف سطر في الدفتر.

@@ -106,6 +106,8 @@
         ${
           opts.actions
             ? `<div class="row wrap" style="margin-top:12px;gap:8px">
+                 <button class="btn sm gold" data-action="eval-player" data-id="${p.id}">⚡ تقييم</button>
+                 <button class="btn sm" data-action="player-detail" data-id="${p.id}">📊 الحسبة</button>
                  <button class="btn sm" data-action="edit-player" data-id="${p.id}">تعديل</button>
                  <button class="btn sm danger" data-action="del-player" data-id="${p.id}">حذف</button>
                </div>`
@@ -451,6 +453,7 @@
 
   function go(r) {
     route = r;
+    if (location.hash !== "#" + r) history.replaceState(null, "", "#" + r);
     render();
     window.scrollTo(0, 0);
   }
@@ -497,9 +500,12 @@
       case "add-player": return openPlayerForm(null, null);
       case "add-player-to": return openPlayerForm(null, id);
       case "edit-player": return openPlayerForm(App.getPlayer(id));
+      case "eval-player": return openEvaluate(id);
+      case "player-detail": return openPlayerDetail(id);
       case "del-player":
         return confirmBox("حذف هذا اللاعب نهائيًا؟", () => {
           App.state.players = App.state.players.filter((p) => p.id !== id);
+          App.state.ratingLog = App.state.ratingLog.filter((l) => l.playerId !== id);
           App.state.teams.forEach((t) => { if (t.captainId === id) t.captainId = null; });
           App.save(); toast("حُذف اللاعب"); render();
         }, true);
@@ -523,7 +529,7 @@
   /* ---------- نموذج اللاعب ---------- */
   function openPlayerForm(player, presetTeam) {
     const isEdit = !!player;
-    const p = player || { name: "", position: "", number: "", teamId: presetTeam || "", stats: {}, photo: null };
+    const p = player || { name: "", position: "", number: "", teamId: presetTeam || "", stats: {}, photo: null, rating: App.RATING_START };
     const statsInputs = App.state.statDefs
       .map(
         (d) => `<div class="stat-input">
@@ -539,9 +545,13 @@
         <label class="field"><span>الرقم</span><input id="pl-num" type="number" value="${esc(p.number)}"></label>
       </div>
       <label class="field"><span>الفريق</span><select id="pl-team">${teamOptions(p.teamId, true)}</select></label>
-      <label class="field"><span>صورة (اختياري)</span><input id="pl-photo" type="file" accept="image/*"></label>
-      <div class="section-title" style="margin:8px 0"><h2 style="font-size:15px">الطاقات</h2><span class="hint">0-99</span></div>
-      ${statsInputs}`;
+      <div class="grid cols-2">
+        <label class="field"><span>التقييم (الطاقة)</span><input id="pl-rating" type="number" min="${App.RATING_MIN}" max="${App.RATING_MAX}" value="${p.rating != null ? p.rating : App.RATING_START}"></label>
+        <label class="field"><span>صورة (اختياري)</span><input id="pl-photo" type="file" accept="image/*"></label>
+      </div>
+      <div class="small muted" style="margin-bottom:10px">يبدأ اللاعب من ${App.RATING_START} ويتغيّر بالتقييم لاحقًا (الحد الأقصى ${App.RATING_MAX}).</div>
+      <details style="margin-bottom:6px"><summary class="muted small" style="cursor:pointer">مهارات وصفية اختيارية (لا تؤثر على التقييم)</summary>
+      <div style="margin-top:10px">${statsInputs}</div></details>`;
     let photoData = p.photo;
     modal({
       title: isEdit ? "تعديل لاعب" : "لاعب جديد",
@@ -568,6 +578,7 @@
             position: $("#pl-pos", root).value,
             number: $("#pl-num", root).value,
             teamId: $("#pl-team", root).value || null,
+            rating: clamp(parseInt($("#pl-rating", root).value, 10) || App.RATING_START, App.RATING_MIN, App.RATING_MAX),
             stats,
             photo: photoData || null,
           };
@@ -575,6 +586,153 @@
           else App.state.players.push(Object.assign({ id: uid(), createdAt: Date.now() }, data));
           App.save();
           toast(isEdit ? "حُفظت التعديلات" : "أُضيف اللاعب", "ok");
+          close();
+          render();
+        };
+      },
+    });
+  }
+
+  /* ---------- تقييم اللاعب (حساب الطاقة) ---------- */
+  function openEvaluate(playerId) {
+    const p = App.getPlayer(playerId);
+    if (!p) return;
+    const rules = App.state.ratingRules;
+    const isGK = p.position === "حارس";
+
+    const ruleRow = (rule) => `
+      <div class="stat-input">
+        <span>${esc(rule.label)} <b style="color:${rules[rule.key] < 0 ? "var(--danger)" : "var(--brand)"}">${rules[rule.key] > 0 ? "+" : ""}${rules[rule.key]}</b></span>
+        <input type="number" min="0" data-eval="${rule.key}" value="0" style="width:70px">
+      </div>`;
+
+    const section = (title, arr, hint) =>
+      `<div class="section-title" style="margin:10px 0 6px"><h2 style="font-size:14px">${title}</h2>${hint ? `<span class="hint">${hint}</span>` : ""}</div>${arr.map(ruleRow).join("")}`;
+
+    const body = document.createElement("div");
+    body.innerHTML = `
+      <div class="card" style="background:#0e1830;margin-bottom:12px">
+        <div class="row between">
+          <div><b>${esc(p.name)}</b> <span class="muted small">${esc(p.position || "")}</span></div>
+          <div>التقييم الحالي: <b style="color:var(--gold);font-size:20px">${App.playerOverall(p)}</b></div>
+        </div>
+        <div class="row between" style="margin-top:8px">
+          <span class="muted small">التغيير:</span>
+          <span id="ev-delta" class="mono" style="font-size:16px;font-weight:800">0</span>
+          <span class="muted small">التقييم الجديد:</span>
+          <span id="ev-new" class="mono" style="font-size:18px;font-weight:800;color:var(--brand)">${App.playerOverall(p)}</span>
+        </div>
+      </div>
+      ${section("للجميع", App.RATING_RULES.general)}
+      ${section("للحارس", App.RATING_RULES.goalkeeper, isGK ? "" : "(هذا اللاعب ليس حارسًا)")}
+      ${section("الخصومات", App.RATING_RULES.deductions)}
+      <label class="field" style="margin-top:10px"><span>ملاحظة (اختياري)</span><input id="ev-note" placeholder="مثال: مباراة الأسبوع 3"></label>`;
+
+    function recompute() {
+      let delta = 0;
+      body.querySelectorAll("[data-eval]").forEach((inp) => {
+        const c = parseInt(inp.value, 10) || 0;
+        delta += c * (rules[inp.getAttribute("data-eval")] || 0);
+      });
+      const cur = App.playerOverall(p);
+      const nw = clamp(cur + delta, App.RATING_MIN, App.RATING_MAX);
+      const dEl = body.querySelector("#ev-delta");
+      dEl.textContent = (delta > 0 ? "+" : "") + delta;
+      dEl.style.color = delta < 0 ? "var(--danger)" : delta > 0 ? "var(--brand)" : "var(--muted)";
+      body.querySelector("#ev-new").textContent = nw;
+    }
+    body.addEventListener("input", recompute);
+
+    modal({
+      title: "⚡ تقييم لاعب",
+      body,
+      foot: `<button class="btn primary" data-save>تطبيق التقييم</button><button class="btn ghost" data-close>إلغاء</button>`,
+      onOpen(root, close) {
+        $("[data-save]", root).onclick = () => {
+          const counts = {};
+          let any = false;
+          body.querySelectorAll("[data-eval]").forEach((inp) => {
+            const c = parseInt(inp.value, 10) || 0;
+            if (c) { counts[inp.getAttribute("data-eval")] = c; any = true; }
+          });
+          if (!any) return toast("أدخل عدد حدث واحد على الأقل", "err");
+          const res = App.evaluatePlayer(playerId, counts, body.querySelector("#ev-note").value.trim());
+          toast(`التقييم ${res.oldRating} ← ${res.newRating}`, "ok");
+          close();
+          render();
+        };
+      },
+    });
+  }
+
+  /* ---------- تفاصيل اللاعب + سجل الحسبة ---------- */
+  function openPlayerDetail(playerId) {
+    const p = App.getPlayer(playerId);
+    if (!p) return;
+    const log = App.playerRatingLog(playerId);
+    const attrAvg = App.playerAttrAvg(p);
+
+    const history = log.length
+      ? log
+          .map((l) => {
+            const bd = l.breakdown.length
+              ? l.breakdown.map((b) => `${esc(b.label)} ×${b.count} (${b.subtotal > 0 ? "+" : ""}${b.subtotal})`).join("، ")
+              : esc(l.note || "");
+            return `<tr>
+              <td class="small">أسبوع ${l.week}<br><span class="muted">${new Date(l.date).toLocaleDateString("ar")}</span></td>
+              <td class="small">${bd || "—"}</td>
+              <td class="mono"><span class="muted">${l.oldRating}</span> ← <b>${l.newRating}</b>
+                <span class="amt ${l.applied < 0 ? "neg" : "pos"}"> (${l.applied > 0 ? "+" : ""}${l.applied})</span></td>
+            </tr>`;
+          })
+          .join("")
+      : `<tr><td colspan="3" class="empty small">لا يوجد سجل تقييم بعد</td></tr>`;
+
+    const body = `
+      ${playerCardHTML(p)}
+      ${attrAvg != null ? `<div class="small muted" style="margin:10px 2px">متوسط المهارات الوصفية: ${attrAvg}</div>` : ""}
+      <div class="row wrap" style="margin:12px 0;gap:8px">
+        <button class="btn sm gold" data-action="eval-player" data-id="${p.id}">⚡ تقييم جديد</button>
+        <button class="btn sm" id="pd-adjust">✏️ تعديل يدوي للتقييم</button>
+        <button class="btn sm" data-action="edit-player" data-id="${p.id}">تعديل البيانات</button>
+      </div>
+      <div class="section-title" style="margin:8px 0"><h2 style="font-size:15px">📒 حسبة التقييم</h2><span class="hint">${log.length} عملية</span></div>
+      <div class="card" style="overflow:auto;padding:8px">
+        <table><thead><tr><th>الوقت</th><th>التفاصيل</th><th>التقييم</th></tr></thead><tbody>${history}</tbody></table>
+      </div>`;
+
+    modal({
+      title: "بطاقة " + p.name,
+      body,
+      foot: `<button class="btn ghost" data-close>إغلاق</button>`,
+      onOpen(root, close) {
+        // إعادة ربط الأزرار داخل النافذة
+        root.querySelectorAll("[data-action]").forEach((b) => {
+          b.onclick = () => {
+            close();
+            handleAction(b.getAttribute("data-action"), b.getAttribute("data-id"));
+          };
+        });
+        $("#pd-adjust", root).onclick = () => {
+          close();
+          openAdjustRating(playerId);
+        };
+      },
+    });
+  }
+
+  function openAdjustRating(playerId) {
+    const p = App.getPlayer(playerId);
+    modal({
+      title: "تعديل يدوي للتقييم",
+      body: `<label class="field"><span>التقييم الجديد لـ ${esc(p.name)} (${App.RATING_MIN}-${App.RATING_MAX})</span>
+        <input id="adj-val" type="number" min="${App.RATING_MIN}" max="${App.RATING_MAX}" value="${App.playerOverall(p)}"></label>
+        <label class="field"><span>سبب (اختياري)</span><input id="adj-note" placeholder="تعديل يدوي"></label>`,
+      foot: `<button class="btn primary" data-save>حفظ</button><button class="btn ghost" data-close>إلغاء</button>`,
+      onOpen(root, close) {
+        $("[data-save]", root).onclick = () => {
+          App.adjustRating(playerId, $("#adj-val", root).value, $("#adj-note", root).value.trim());
+          toast("حُدّث التقييم", "ok");
           close();
           render();
         };
@@ -776,6 +934,14 @@
         </div>`
       )
       .join("");
+    const ratingRulesHTML = App.ratingRuleList()
+      .map(
+        (rule) => `<div class="stat-input">
+          <span>${esc(rule.label)}</span>
+          <input type="number" data-rrule="${rule.key}" value="${App.state.ratingRules[rule.key]}" style="width:70px">
+        </div>`
+      )
+      .join("");
     const statsHTML = App.state.statDefs
       .map(
         (d, i) => `<div class="row" style="gap:8px;margin-bottom:6px">
@@ -792,7 +958,9 @@
       </div>
       <div class="section-title" style="margin:8px 0"><h2 style="font-size:15px">معايير الفلوس</h2></div>
       ${rulesHTML}
-      <div class="section-title" style="margin:14px 0 8px"><h2 style="font-size:15px">طاقات اللاعبين</h2><span class="hint">أسماء الخانات</span></div>
+      <div class="section-title" style="margin:14px 0 8px"><h2 style="font-size:15px">معايير التقييم (الطاقة)</h2><span class="hint">نقاط كل حدث</span></div>
+      ${ratingRulesHTML}
+      <div class="section-title" style="margin:14px 0 8px"><h2 style="font-size:15px">مهارات وصفية</h2><span class="hint">اختيارية</span></div>
       <div id="stats-list">${statsHTML}</div>
       <div class="row" style="gap:8px;margin-top:8px">
         <input id="new-stat" placeholder="طاقة جديدة (مثال: التمركز)" style="flex:1">
@@ -837,6 +1005,9 @@
           c.week = parseInt($("#s-week", root).value, 10) || c.week;
           root.querySelectorAll("[data-rule]").forEach((inp) => {
             App.state.moneyRules[inp.getAttribute("data-rule")] = parseInt(inp.value, 10) || 0;
+          });
+          root.querySelectorAll("[data-rrule]").forEach((inp) => {
+            App.state.ratingRules[inp.getAttribute("data-rrule")] = parseInt(inp.value, 10) || 0;
           });
           root.querySelectorAll("[data-statlabel]").forEach((inp) => {
             const key = inp.getAttribute("data-statlabel");
@@ -886,6 +1057,8 @@
   }
 
   /* ---------- الإقلاع ---------- */
+  const initRoute = (location.hash || "").replace("#", "");
+  if (VIEWS[initRoute]) route = initRoute;
   document.addEventListener("DOMContentLoaded", render);
   if (document.readyState !== "loading") render();
 })();
