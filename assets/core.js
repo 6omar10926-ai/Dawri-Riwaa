@@ -133,7 +133,7 @@
     { key: "yellow",       label: "كرت أصفر",          money: true,  ratingKey: "yellow" },
     { key: "red",          label: "كرت أحمر",          money: true,  ratingKey: "red" },
     { key: "nutmeg",       label: "تسطيح",             money: true },
-    { key: "ownGoal",      label: "هدف عكسي",                        ratingKey: "ownGoal" },
+    { key: "ownGoal",      label: "هدف عكسي",         scoresOpponent: true, ratingKey: "ownGoal" },
     { key: "concededGoal", label: "استقبال هدف",                     ratingKey: "concededGoal" },
     { key: "missedChance", label: "إضاعة فرصة محققة",                 ratingKey: "missedChance" },
     { key: "causePenalty", label: "تسبب بلنتي",                      ratingKey: "causePenalty" },
@@ -428,9 +428,15 @@
       away = 0;
     match.events.forEach((ev) => {
       const def = App.matchAction(ev.type);
-      if (def && def.scores) {
+      if (!def) return;
+      if (def.scores) {
+        // هدف عادي يُحسب لفريق صاحب الحدث
         if (ev.teamId === match.homeTeamId) home++;
         else if (ev.teamId === match.awayTeamId) away++;
+      } else if (def.scoresOpponent) {
+        // هدف عكسي يُحسب لصالح الفريق الخصم
+        if (ev.teamId === match.homeTeamId) away++;
+        else if (ev.teamId === match.awayTeamId) home++;
       }
     });
     return { home, away };
