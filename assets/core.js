@@ -443,18 +443,18 @@
   }
   App.computeMatchScores = computeMatchScores;
 
-  function recordMatch(match) {
-    const rules = App.state.moneyRules;
-    const id = match.id || uid();
-    match.id = id;
-    match.date = match.date || new Date().toISOString();
-    match.week = match.week || App.state.club.week;
+  // حساب النتيجة والفائز وتخزينها على المباراة
+  function computeMatchMeta(match) {
     const { home, away } = computeMatchScores(match);
     match.homeScore = home;
     match.awayScore = away;
-    match.result =
-      home === away ? "draw" : home > away ? "home" : "away";
+    match.result = home === away ? "draw" : home > away ? "home" : "away";
+  }
 
+  // تطبيق فلوس المباراة (الأحداث + النتيجة) على ميزانيات الفرق
+  function applyMatchFinancials(match) {
+    const rules = App.state.moneyRules;
+    const id = match.id;
     // فلوس الأحداث
     match.events.forEach((ev) => {
       const amount = rules[ev.type] || 0;
@@ -468,7 +468,6 @@
         refId: id,
       });
     });
-
     // فلوس النتيجة
     if (match.result === "draw") {
       addTransaction(match.homeTeamId, rules.draw, "تعادل", { refType: "match", refId: id });
@@ -477,7 +476,15 @@
       const winnerId = match.result === "home" ? match.homeTeamId : match.awayTeamId;
       addTransaction(winnerId, rules.win, "فوز بالمباراة", { refType: "match", refId: id });
     }
+  }
 
+  function recordMatch(match) {
+    const id = match.id || uid();
+    match.id = id;
+    match.date = match.date || new Date().toISOString();
+    match.week = match.week || App.state.club.week;
+    computeMatchMeta(match);
+    applyMatchFinancials(match);
     App.state.matches.push(match);
     // تحديث تقييمات اللاعبين من أحداث المباراة (إدخال واحد → نتيجة + تقييم)
     applyMatchRatings(match);
@@ -485,6 +492,24 @@
     return match;
   }
   App.recordMatch = recordMatch;
+
+  // تعديل مباراة مسجّلة: يلغي أثرها القديم (فلوس + تقييمات) ثم يعيد تطبيقها بالبيانات الجديدة.
+  function updateMatch(id, data) {
+    const match = App.state.matches.find((m) => m.id === id);
+    if (!match) return null;
+    reverseByRef("match", id);
+    reverseMatchRatings(id);
+    if (data.homeTeamId) match.homeTeamId = data.homeTeamId;
+    if (data.awayTeamId) match.awayTeamId = data.awayTeamId;
+    if (data.events) match.events = data.events;
+    if (typeof data.note === "string") match.note = data.note;
+    computeMatchMeta(match);
+    applyMatchFinancials(match);
+    applyMatchRatings(match);
+    save();
+    return match;
+  }
+  App.updateMatch = updateMatch;
 
   function deleteMatch(id) {
     reverseByRef("match", id);

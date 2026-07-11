@@ -251,6 +251,8 @@
     return [TAB.dashboard, TAB.teams, TAB.matches, TAB.fixtures];
   }
   let route = "dashboard";
+  // نمط عرض النتائج: false = العرض الكامل • true = نمط التقييم المختصر (المباراة + تقييمات لاعبيها فقط)
+  let matchesRatingMode = false;
 
   function renderNav() {
     const tabs = roleTabs();
@@ -435,13 +437,49 @@
       ${body}`;
   }
 
+  // صفوف تقييمات لاعبي مباراة معيّنة (نمط التقييم المختصر)
+  function matchRatingRows(matchId) {
+    const logs = App.state.ratingLog.filter((l) => l.matchId === matchId);
+    if (!logs.length) return `<div class="small muted" style="margin-top:8px">لا تغييرات تقييم في هذه المباراة</div>`;
+    return (
+      `<div style="margin-top:10px">` +
+      logs
+        .map((l) => {
+          const p = App.getPlayer(l.playerId);
+          const name = p ? p.name : "لاعب محذوف";
+          const bd = l.breakdown.map((b) => `${esc(b.label)} ×${b.count}`).join("، ");
+          return `<div class="row between small" style="padding:5px 0;border-bottom:1px solid var(--line)">
+            <span><b>${esc(name)}</b>${bd ? ` <span class="muted">${bd}</span>` : ""}</span>
+            <span class="mono"><span class="muted">${l.oldRating}</span> ← <b>${l.newRating}</b>
+              <span class="amt ${l.applied < 0 ? "neg" : "pos"}">(${l.applied > 0 ? "+" : ""}${l.applied})</span></span>
+          </div>`;
+        })
+        .join("") +
+      `</div>`
+    );
+  }
+
   function viewMatches() {
     const matches = App.state.matches.slice().reverse();
+    const ratingMode = isAdmin() && matchesRatingMode;
     const list = matches.length
       ? matches
           .map((m) => {
             const h = App.getTeam(m.homeTeamId),
               a = App.getTeam(m.awayTeamId);
+            const scoreRow = `<div class="row between" style="margin-top:8px;font-size:16px;font-weight:700">
+                <span>${esc(h ? h.name : "؟")}</span>
+                <span class="mono" style="font-size:22px">${m.homeScore} - ${m.awayScore}</span>
+                <span>${esc(a ? a.name : "؟")}</span>
+              </div>`;
+            // نمط التقييم: المباراة + تقييمات لاعبيها فقط
+            if (ratingMode) {
+              return `<div class="card">
+                <div class="small muted">الأسبوع ${m.week} • ${new Date(m.date).toLocaleDateString("ar")}</div>
+                ${scoreRow}
+                ${matchRatingRows(m.id)}
+              </div>`;
+            }
             const money = App.state.ledger
               .filter((l) => l.refId === m.id)
               .reduce((s, l) => s + l.amount, 0);
@@ -449,13 +487,12 @@
             return `<div class="card">
               <div class="row between">
                 <div class="small muted">الأسبوع ${m.week} • ${new Date(m.date).toLocaleDateString("ar")}</div>
-                ${isAdmin() ? `<button class="btn sm danger" data-action="del-match" data-id="${m.id}">حذف</button>` : ""}
+                ${isAdmin() ? `<div class="row" style="gap:6px">
+                  <button class="btn sm" data-action="edit-match" data-id="${m.id}">تعديل</button>
+                  <button class="btn sm danger" data-action="del-match" data-id="${m.id}">حذف</button>
+                </div>` : ""}
               </div>
-              <div class="row between" style="margin-top:8px;font-size:16px;font-weight:700">
-                <span>${esc(h ? h.name : "؟")}</span>
-                <span class="mono" style="font-size:22px">${m.homeScore} - ${m.awayScore}</span>
-                <span>${esc(a ? a.name : "؟")}</span>
-              </div>
+              ${scoreRow}
               <div class="small muted" style="margin-top:8px">${m.events.length} حدث • أُضيف ${fmtMoney(money)} ${esc(App.state.club.currency)}${ratedPlayers ? " • حُدّث تقييم " + ratedPlayers + " لاعب" : ""}</div>
             </div>`;
           })
@@ -464,8 +501,10 @@
 
     return `<div class="section-title"><h2>النتائج</h2>
         <div class="spacer"></div>
+        ${isAdmin() ? `<button class="btn sm ${ratingMode ? "gold" : ""}" data-action="toggle-rating-mode">⚡ نمط التقييم</button>` : ""}
         ${isAdmin() ? `<button class="btn primary sm" data-action="new-match">＋ تسجيل مباراة</button>` : ""}
       </div>
+      ${ratingMode ? `<div class="small muted" style="margin:-4px 2px 8px">عرض مختصر: كل مباراة وتقييمات لاعبيها فقط.</div>` : ""}
       <div class="grid">${list}</div>`;
   }
 
@@ -966,7 +1005,7 @@
 
   // أفعال يقتصر تنفيذها على المشرف
   const ADMIN_ACTIONS = new Set([
-    "settings", "advance-week", "new-match", "del-match", "awards",
+    "settings", "advance-week", "new-match", "edit-match", "del-match", "toggle-rating-mode", "awards",
     "add-player", "add-player-to", "edit-player", "eval-player", "del-player",
     "edit-team", "open-market-random", "open-market-manual", "finalize-lot",
     "close-market", "export", "import",
@@ -987,8 +1026,16 @@
           render();
         });
       case "new-match": return openMatchForm();
+      case "edit-match": {
+        const m = App.state.matches.find((x) => x.id === id);
+        if (!m) return toast("المباراة غير موجودة", "err");
+        return openMatchForm(m);
+      }
+      case "toggle-rating-mode":
+        matchesRatingMode = !matchesRatingMode;
+        return render();
       case "del-match":
-        return confirmBox("حذف المباراة وإرجاع فلوسها؟", () => { App.deleteMatch(id); toast("حُذفت المباراة"); render(); }, true);
+        return confirmBox("حذف المباراة وإرجاع فلوسها وتقييماتها؟", () => { App.deleteMatch(id); toast("حُذفت المباراة"); render(); }, true);
       case "go-market": return go("market");
       case "awards": return openAwards();
       case "add-player": return openPlayerForm(null, null);
@@ -1295,10 +1342,12 @@
     });
   }
 
-  /* ---------- نموذج المباراة ---------- */
-  function openMatchForm() {
+  /* ---------- نموذج المباراة (تسجيل / تعديل) ---------- */
+  function openMatchForm(existing) {
     if (App.state.teams.length < 2) return toast("تحتاج فريقين على الأقل", "err");
-    const events = [];
+    const isEdit = !!existing;
+    // نسخة قابلة للتعديل من أحداث المباراة (حتى لا نغيّر الأصل قبل الحفظ)
+    const events = isEdit ? existing.events.map((e) => Object.assign({}, e)) : [];
     const teams = App.state.teams;
 
     // لاحقة مختصرة لخيار نوع الحدث: الفلوس و/أو نقاط التقييم
@@ -1345,8 +1394,8 @@
 
     const body = document.createElement("div");
     function renderBody() {
-      const homeId = body.querySelector("#mt-home")?.value || teams[0].id;
-      const awayId = body.querySelector("#mt-away")?.value || teams[1].id;
+      const homeId = body.querySelector("#mt-home")?.value || (isEdit ? existing.homeTeamId : teams[0].id);
+      const awayId = body.querySelector("#mt-away")?.value || (isEdit ? existing.awayTeamId : teams[1].id);
       const evTeamId = body.querySelector("#ev-team")?.value || homeId;
       const evPlayers = App.teamPlayers(evTeamId);
       body.innerHTML = `
@@ -1385,16 +1434,21 @@
     renderBody();
 
     modal({
-      title: "تسجيل مباراة",
+      title: isEdit ? "تعديل المباراة" : "تسجيل مباراة",
       body,
-      foot: `<button class="btn primary" data-save>حفظ المباراة</button><button class="btn ghost" data-close>إلغاء</button>`,
+      foot: `<button class="btn primary" data-save>${isEdit ? "حفظ التعديلات" : "حفظ المباراة"}</button><button class="btn ghost" data-close>إلغاء</button>`,
       onOpen(root, close) {
         $("[data-save]", root).onclick = () => {
           const homeTeamId = body.querySelector("#mt-home").value;
           const awayTeamId = body.querySelector("#mt-away").value;
           if (homeTeamId === awayTeamId) return toast("اختر فريقين مختلفين", "err");
-          App.recordMatch({ homeTeamId, awayTeamId, events });
-          toast("سُجّلت المباراة وحُدّثت الميزانيات والتقييمات", "ok");
+          if (isEdit) {
+            App.updateMatch(existing.id, { homeTeamId, awayTeamId, events });
+            toast("حُفظت تعديلات المباراة (النتيجة والفلوس والتقييمات)", "ok");
+          } else {
+            App.recordMatch({ homeTeamId, awayTeamId, events });
+            toast("سُجّلت المباراة وحُدّثت الميزانيات والتقييمات", "ok");
+          }
           close();
           render();
         };
