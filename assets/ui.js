@@ -142,6 +142,7 @@
       <div class="logo">⚽</div>
       <div class="brand"><h1>${esc(c.name)}</h1><small>الموسم ${c.season}</small></div>
       <div class="spacer"></div>
+      <span class="week-pill" id="cloud-status" title="حالة المزامنة السحابية">…</span>
       <div class="week-pill">الأسبوع <b>${c.week}</b></div>
       <button class="btn sm ghost" data-action="settings" title="الإعدادات">⚙️</button>
     </div></header>`;
@@ -448,6 +449,7 @@
       `<main class="app" id="app">${(VIEWS[route] || viewDashboard)()}</main>` +
       renderNav();
     wire();
+    if (App.cloud && App.cloud.updateBadge) App.cloud.updateBadge();
   }
   App.render = render;
 

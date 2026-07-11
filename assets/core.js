@@ -170,14 +170,26 @@
     s.market = s.market || d.market;
     return s;
   }
-  function save() {
+  function saveLocal() {
     try {
       localStorage.setItem(KEY, JSON.stringify(App.state));
     } catch (e) {
-      alert("تعذّر الحفظ (قد تكون المساحة ممتلئة). حاول تصدير نسخة احتياطية.");
+      console.warn("تعذّر الحفظ المحلي", e);
     }
   }
+  function save() {
+    saveLocal();
+    // خطّاف المزامنة السحابية (يضبطه sync.js عند توفّر Firebase)
+    if (typeof App.afterSave === "function") App.afterSave();
+  }
   App.save = save;
+  App.saveLocal = saveLocal;
+
+  // تطبيق حالة قادمة من السحابة (بدون إعادة رفعها) — يستخدمها sync.js
+  App.applyCloudState = function (obj) {
+    App.state = migrate(obj);
+    saveLocal();
+  };
 
   App.state = load();
 
