@@ -1,5 +1,5 @@
 /* =============================================================
-   دوري الروّاد — النواة (State + Storage + Rules + Actions)
+   دوري رواء — النواة (State + Storage + Rules + Actions)
    كل شيء يُحفظ محليًا في المتصفح (localStorage). لا يوجد خادم.
    ============================================================= */
 (function () {
@@ -114,18 +114,27 @@
   };
 
   /* ---------- الحالة الافتراضية ---------- */
-  const TEAM_COLORS = ["#e11d48", "#2563eb", "#16a34a"];
+  // هويات الفرق (الاسم/اللون/الشعار مأخوذة من ملف الهويات)
+  const TEAM_IDENTITIES = [
+    { name: "بؤرة", color: "#5e71e8", logo: "assets/teams/bura.png" },
+    { name: "الرواد", color: "#b3b6fc", logo: "assets/teams/rowad.png" },
+    { name: "الفهود", color: "#c9a24a", logo: "assets/teams/fuhood.png" },
+  ];
+  App.TEAM_IDENTITIES = TEAM_IDENTITIES;
+  const OLD_DEFAULT_TEAM_NAMES = /^الفريق (الأول|الثاني|الثالث)$/;
+
   function defaultState() {
-    const teams = ["الفريق الأول", "الفريق الثاني", "الفريق الثالث"].map((name, i) => ({
+    const teams = TEAM_IDENTITIES.map((idn) => ({
       id: uid(),
-      name,
-      color: TEAM_COLORS[i],
+      name: idn.name,
+      color: idn.color,
+      logo: idn.logo,
       budget: 0,
       captainId: null,
     }));
     return {
       version: 1,
-      club: { name: "دوري الروّاد", currency: "﷼", season: 1, week: 1 },
+      club: { name: "دوري رواء", currency: "﷼", season: 1, week: 1 },
       teams,
       players: [],
       statDefs: App.DEFAULT_STATS.slice(),
@@ -155,10 +164,23 @@
   function migrate(s) {
     const d = defaultState();
     s.club = Object.assign(d.club, s.club || {});
+    // ترقية اسم الدوري القديم إلى الهوية الجديدة
+    if (!s.club.name || s.club.name === "دوري الروّاد") s.club.name = d.club.name;
     s.moneyRules = Object.assign(defaultMoneyRules(), s.moneyRules || {});
     s.ratingRules = Object.assign(defaultRatingRules(), s.ratingRules || {});
     if (!Array.isArray(s.statDefs) || !s.statDefs.length) s.statDefs = d.statDefs;
     s.teams = s.teams || d.teams;
+    // إسناد هوية كل فريق (الاسم/اللون/الشعار) حسب الترتيب،
+    // مع الحفاظ على الأسماء التي عدّلها المستخدم يدويًا.
+    s.teams.forEach((t, i) => {
+      const idn = TEAM_IDENTITIES[i];
+      if (!idn) return;
+      if (!t.logo) t.logo = idn.logo;
+      if (OLD_DEFAULT_TEAM_NAMES.test(t.name || "")) {
+        t.name = idn.name;
+        t.color = idn.color;
+      }
+    });
     s.players = s.players || [];
     s.players.forEach((p) => {
       if (typeof p.rating !== "number") p.rating = App.RATING_START;

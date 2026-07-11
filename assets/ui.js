@@ -74,6 +74,15 @@
     return html;
   }
 
+  // شعار الفريق (صورة الهوية) أو حرف بديل بلون الفريق
+  function teamCrestHTML(t, big) {
+    const cls = "team-crest" + (big ? " lg" : "");
+    if (t && t.logo) return `<img class="${cls}" src="${esc(t.logo)}" alt="${esc(t.name)}">`;
+    const c = t ? t.color : "var(--muted)";
+    const initial = t ? esc((t.name || "?").trim().charAt(0)) : "?";
+    return `<span class="${cls}" style="display:grid;place-items:center;background:${c};color:#0b1330;font-weight:800;font-size:18px">${initial}</span>`;
+  }
+
   function playerCardHTML(p, opts = {}) {
     const team = App.getTeam(p.teamId);
     const ovr = App.playerOverall(p);
@@ -139,7 +148,7 @@
   function renderTopbar() {
     const c = App.state.club;
     return `<header class="topbar"><div class="inner">
-      <div class="logo">⚽</div>
+      <div class="logo"><img src="assets/logo.svg" alt="شعار دوري رواء"></div>
       <div class="brand"><h1>${esc(c.name)}</h1><small>الموسم ${c.season}</small></div>
       <div class="spacer"></div>
       <span class="week-pill" id="cloud-status" title="حالة المزامنة السحابية">…</span>
@@ -180,12 +189,15 @@
         const cls = t.budget < 0 ? "neg" : "pos";
         return `<div class="card team-card">
           <div class="stripe" style="background:${t.color}"></div>
-          <div style="padding-inline-start:8px">
-            <h3>${esc(t.name)}</h3>
-            <div class="budget ${cls} mono">${fmtMoney(t.budget)} <span class="small muted">${esc(App.state.club.currency)}</span></div>
-            <div class="row wrap" style="margin-top:8px">
-              <span class="chip">👥 ${players.length} لاعب</span>
-              <span class="chip">💵 ${fmtShort(t.budget)}</span>
+          <div class="row" style="padding-inline-start:8px;align-items:flex-start;gap:12px">
+            ${teamCrestHTML(t, true)}
+            <div style="flex:1">
+              <h3>${esc(t.name)}</h3>
+              <div class="budget ${cls} mono">${fmtMoney(t.budget)} <span class="small muted">${esc(App.state.club.currency)}</span></div>
+              <div class="row wrap" style="margin-top:8px">
+                <span class="chip">👥 ${players.length} لاعب</span>
+                <span class="chip">💵 ${fmtShort(t.budget)}</span>
+              </div>
             </div>
           </div>
         </div>`;
@@ -243,7 +255,7 @@
         return `<div class="card">
           <div class="row between">
             <div class="row">
-              <span style="display:inline-block;width:14px;height:14px;border-radius:4px;background:${t.color}"></span>
+              ${teamCrestHTML(t)}
               <h3 style="margin:0">${esc(t.name)}</h3>
             </div>
             <div class="row">
@@ -747,16 +759,32 @@
     const players = App.teamPlayers(team.id);
     const body = `
       <label class="field"><span>اسم الفريق</span><input id="tm-name" value="${esc(team.name)}"></label>
+      <div class="row" style="gap:12px;margin-bottom:12px">
+        <span id="tm-crest">${teamCrestHTML(team, true)}</span>
+        <label class="field" style="flex:1;margin:0"><span>شعار الفريق (اختياري)</span><input id="tm-logo" type="file" accept="image/*"></label>
+      </div>
       <label class="field"><span>اللون</span><input id="tm-color" type="color" value="${team.color}"></label>
       <label class="field"><span>القائد</span><select id="tm-cap"><option value="">—</option>${players.map((p) => `<option value="${p.id}" ${p.id === team.captainId ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>`;
+    let logoData = team.logo || null;
     modal({
       title: "تعديل الفريق",
       body,
       foot: `<button class="btn primary" data-save>حفظ</button><button class="btn ghost" data-close>إلغاء</button>`,
       onOpen(root, close) {
+        $("#tm-logo", root).onchange = (e) => {
+          const f = e.target.files[0];
+          if (!f) return;
+          const rd = new FileReader();
+          rd.onload = () => {
+            logoData = rd.result;
+            $("#tm-crest", root).innerHTML = `<img class="team-crest lg" src="${logoData}" alt="">`;
+          };
+          rd.readAsDataURL(f);
+        };
         $("[data-save]", root).onclick = () => {
           team.name = $("#tm-name", root).value.trim() || team.name;
           team.color = $("#tm-color", root).value;
+          team.logo = logoData || null;
           team.captainId = $("#tm-cap", root).value || null;
           App.save();
           toast("حُفظ الفريق", "ok");

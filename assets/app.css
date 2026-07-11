@@ -1,19 +1,19 @@
 /* =============================================================
-   دوري الروّاد — التنسيقات
+   دوري رواء — التنسيقات (ألوان مستوحاة من شعار الدوري: كحلي + بنفسجي)
    ============================================================= */
 :root {
-  --bg: #0b1220;
-  --bg-2: #111a2e;
-  --card: #16223c;
-  --card-2: #1d2c4d;
-  --line: #26365e;
-  --text: #eaf0ff;
-  --muted: #9fb0d0;
-  --brand: #22c55e;
-  --brand-2: #16a34a;
+  --bg: #0d1836;
+  --bg-2: #111f45;
+  --card: #16244c;
+  --card-2: #1c2e5c;
+  --line: #2c3f70;
+  --text: #eef1ff;
+  --muted: #a7b2d8;
+  --brand: #a435cf;
+  --brand-2: #7d20a8;
   --gold: #fbbf24;
   --danger: #ef4444;
-  --blue: #3b82f6;
+  --blue: #5e71e8;
   --radius: 16px;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
@@ -25,8 +25,8 @@ html, body { height: 100%; }
 body {
   margin: 0;
   font-family: "Segoe UI", "Tahoma", system-ui, sans-serif;
-  background: radial-gradient(1200px 600px at 80% -10%, #16233f, transparent),
-    linear-gradient(180deg, #0b1220, #0a0f1c);
+  background: radial-gradient(1200px 600px at 80% -10%, #1b2a5e, transparent),
+    linear-gradient(180deg, #0d1836, #0a1128);
   background-color: var(--bg);
   color: var(--text);
   direction: rtl;
@@ -43,7 +43,7 @@ header.topbar {
   top: 0;
   z-index: 30;
   backdrop-filter: blur(10px);
-  background: linear-gradient(180deg, rgba(11, 18, 32, 0.95), rgba(11, 18, 32, 0.75));
+  background: linear-gradient(180deg, rgba(13, 24, 54, 0.95), rgba(13, 24, 54, 0.75));
   border-bottom: 1px solid var(--line);
 }
 .topbar .inner {
@@ -55,11 +55,12 @@ header.topbar {
   gap: 12px;
 }
 .logo {
-  width: 40px; height: 40px; border-radius: 12px;
+  width: 42px; height: 42px; border-radius: 12px;
   display: grid; place-items: center;
-  background: linear-gradient(135deg, var(--brand), var(--brand-2));
-  font-size: 22px; box-shadow: var(--shadow);
+  background: #0b1330; border: 1px solid var(--line);
+  box-shadow: var(--shadow); overflow: hidden;
 }
+.logo svg, .logo img { width: 30px; height: 30px; display: block; }
 .brand h1 { font-size: 18px; margin: 0; }
 .brand small { color: var(--muted); font-size: 12px; }
 .spacer { flex: 1; }
@@ -72,7 +73,7 @@ header.topbar {
 /* ---------- التنقّل ---------- */
 nav.tabs {
   position: fixed; bottom: 0; right: 0; left: 0; z-index: 40;
-  background: rgba(13, 20, 36, 0.96);
+  background: rgba(11, 20, 46, 0.96);
   border-top: 1px solid var(--line);
   backdrop-filter: blur(10px);
 }
@@ -128,7 +129,7 @@ nav.tabs button.active .ico { transform: translateY(-2px); }
 }
 .btn:hover { background: #24365f; }
 .btn:active { transform: scale(0.98); }
-.btn.primary { background: linear-gradient(135deg, var(--brand), var(--brand-2)); border-color: transparent; color: #062a12; }
+.btn.primary { background: linear-gradient(135deg, var(--brand), var(--brand-2)); border-color: transparent; color: #fff; }
 .btn.gold { background: linear-gradient(135deg, #fbbf24, #f59e0b); border-color: transparent; color: #3a2606; }
 .btn.danger { background: #3a1620; border-color: #5b2130; color: #ffb4c0; }
 .btn.ghost { background: transparent; }
@@ -150,6 +151,13 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--brand); out
 .team-card { position: relative; overflow: hidden; }
 .team-card .stripe { position: absolute; inset-inline-start: 0; top: 0; bottom: 0; width: 6px; }
 .team-card h3 { margin: 0 0 2px; font-size: 17px; }
+
+/* شعار/هوية الفريق */
+.team-crest {
+  width: 46px; height: 46px; border-radius: 12px; object-fit: cover;
+  background: #0b1330; border: 1px solid var(--line); flex: none;
+}
+.team-crest.lg { width: 58px; height: 58px; border-radius: 14px; }
 .budget { font-size: 22px; font-weight: 800; letter-spacing: 0.3px; }
 .budget.pos { color: var(--brand); }
 .budget.neg { color: var(--danger); }
@@ -242,4 +250,4 @@ tr:last-child td { border-bottom: none; }
 
 .pill-toggle { display: inline-flex; background: #0e1830; border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 3px; }
 .pill-toggle button { border: none; background: none; color: var(--muted); padding: 6px 14px; border-radius: 999px; cursor: pointer; font-family: inherit; font-size: 13px; }
-.pill-toggle button.active { background: var(--brand); color: #062a12; font-weight: 700; }
+.pill-toggle button.active { background: var(--brand); color: #fff; font-weight: 700; }
