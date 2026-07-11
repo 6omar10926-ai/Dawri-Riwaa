@@ -65,6 +65,112 @@
   }
   App.confirmBox = confirmBox;
 
+  /* =========================================================
+     الأدوار والجلسة (حماية على مستوى الواجهة)
+     ========================================================= */
+  const SKEY = "dawri_session_v1";
+  let session = null;
+  try { session = JSON.parse(localStorage.getItem(SKEY) || "null"); } catch (e) { session = null; }
+  // لو فريق الرئيس لم يعد موجودًا، ألغِ الجلسة
+  if (session && session.role === "president" && !App.getTeam(session.teamId)) session = null;
+
+  function setSession(s) {
+    session = s;
+    if (s) localStorage.setItem(SKEY, JSON.stringify(s));
+    else localStorage.removeItem(SKEY);
+  }
+  App.session = () => session;
+  const isAdmin = () => !!session && session.role === "admin";
+  const isPresident = () => !!session && session.role === "president";
+  const isPublic = () => !!session && session.role === "public";
+  const myTeamId = () => (session && session.teamId) || null;
+  App.isAdmin = isAdmin;
+
+  function roleName() {
+    if (isAdmin()) return "المشرف";
+    if (isPresident()) return "رئيس " + (App.getTeam(myTeamId())?.name || "");
+    return "عرض عام";
+  }
+
+  function logout() {
+    setSession(null);
+    route = "dashboard";
+    render();
+  }
+
+  /* ---------- شاشة الدخول ---------- */
+  function renderLogin() {
+    const teamBtns = App.state.teams
+      .map(
+        (t) => `<button class="role-team" data-login-team="${t.id}">
+          ${teamCrestHTML(t)}<span>${esc(t.name)}</span></button>`
+      )
+      .join("");
+    document.body.innerHTML = `
+      <div class="login-wrap">
+        <div class="login-card card">
+          <img class="login-logo" src="assets/logo.png" alt="${esc(App.state.club.name)}">
+          <p class="muted" style="margin:4px 0 18px">اختر طريقة الدخول</p>
+          <div id="login-body">
+            <button class="btn primary block" data-login="admin">🛡️ المشرف المسؤول</button>
+            <button class="btn block" style="margin-top:10px" data-login="president">🎽 رئيس نادٍ</button>
+            <button class="btn ghost block" style="margin-top:10px" data-login="public">👁️ عرض عام (بدون دخول)</button>
+          </div>
+        </div>
+      </div>`;
+
+    const body = $("#login-body");
+    const backHTML = `<button class="btn ghost sm" data-login-back style="margin-top:12px">‹ رجوع</button>`;
+
+    function askCode(title, onSubmit, extra) {
+      body.innerHTML = `
+        <div class="small muted" style="margin-bottom:8px">${esc(title)}</div>
+        ${extra || ""}
+        <input id="login-code" type="password" placeholder="كلمة المرور" autocomplete="off">
+        <button class="btn primary block" data-login-go style="margin-top:12px">دخول</button>
+        ${backHTML}`;
+      const codeEl = $("#login-code", body);
+      codeEl.focus();
+      const go2 = () => onSubmit(codeEl.value);
+      $("[data-login-go]", body).onclick = go2;
+      codeEl.onkeydown = (e) => { if (e.key === "Enter") go2(); };
+      $("[data-login-back]", body).onclick = renderLogin;
+    }
+
+    body.querySelectorAll("[data-login]").forEach((b) => {
+      b.onclick = () => {
+        const role = b.getAttribute("data-login");
+        if (role === "public") { setSession({ role: "public" }); route = "dashboard"; render(); return; }
+        if (role === "admin") {
+          askCode("أدخل كلمة مرور المشرف:", (code) => {
+            if (!App.checkAdminCode(code)) return toast("كلمة المرور غير صحيحة", "err");
+            setSession({ role: "admin" }); route = "dashboard"; render();
+          });
+          return;
+        }
+        // president: اختر الفريق ثم كلمة المرور
+        body.innerHTML = `
+          <div class="small muted" style="margin-bottom:10px">اختر ناديك:</div>
+          <div class="role-teams">${teamBtns}</div>
+          ${backHTML}`;
+        $("[data-login-back]", body).onclick = renderLogin;
+        body.querySelectorAll("[data-login-team]").forEach((tb) => {
+          tb.onclick = () => {
+            const teamId = tb.getAttribute("data-login-team");
+            const team = App.getTeam(teamId);
+            askCode(
+              "كلمة مرور رئيس نادي " + (team?.name || ""),
+              (code) => {
+                if (!App.checkTeamCode(teamId, code)) return toast("كلمة المرور غير صحيحة", "err");
+                setSession({ role: "president", teamId }); route = "lineups"; render();
+              }
+            );
+          };
+        });
+      };
+    });
+  }
+
   /* ---------- عناصر مشتركة ---------- */
   function teamOptions(selected, includeEmpty) {
     let html = includeEmpty ? `<option value="">— بدون فريق —</option>` : "";
@@ -126,22 +232,35 @@
   }
 
   /* ---------- التبويبات ---------- */
-  const TABS = [
-    { key: "dashboard", label: "الرئيسية", ico: "🏠" },
-    { key: "teams", label: "الفرق", ico: "🛡️" },
-    { key: "players", label: "اللاعبون", ico: "🎽" },
-    { key: "matches", label: "المباريات", ico: "⚽" },
-    { key: "market", label: "السوق", ico: "💰" },
-    { key: "ledger", label: "الحسبة", ico: "📒" },
-  ];
+  const TAB = {
+    dashboard: { key: "dashboard", label: "الرئيسية", ico: "🏠" },
+    teams: { key: "teams", label: "الفرق", ico: "🛡️" },
+    players: { key: "players", label: "اللاعبون", ico: "🎽" },
+    matches: { key: "matches", label: "النتائج", ico: "⚽" },
+    fixtures: { key: "fixtures", label: "القادمة", ico: "📅" },
+    market: { key: "market", label: "السوق", ico: "💰" },
+    ledger: { key: "ledger", label: "الحسبة", ico: "📒" },
+    lineups: { key: "lineups", label: "التشكيلات", ico: "🧩" },
+  };
+  // تبويبات كل دور
+  function roleTabs() {
+    if (isAdmin())
+      return [TAB.dashboard, TAB.teams, TAB.players, TAB.matches, TAB.fixtures, TAB.market, TAB.ledger];
+    if (isPresident()) return [TAB.lineups, TAB.market];
+    // عرض عام
+    return [TAB.dashboard, TAB.teams, TAB.matches, TAB.fixtures];
+  }
   let route = "dashboard";
 
   function renderNav() {
-    return `<nav class="tabs"><div class="inner">
-      ${TABS.map(
-        (t) => `<button data-nav="${t.key}" class="${route === t.key ? "active" : ""}">
+    const tabs = roleTabs();
+    return `<nav class="tabs"><div class="inner" style="grid-template-columns:repeat(${tabs.length},1fr)">
+      ${tabs
+        .map(
+          (t) => `<button data-nav="${t.key}" class="${route === t.key ? "active" : ""}">
           <span class="ico">${t.ico}</span><span>${t.label}</span></button>`
-      ).join("")}
+        )
+        .join("")}
     </div></nav>`;
   }
 
@@ -149,11 +268,12 @@
     const c = App.state.club;
     return `<header class="topbar"><div class="inner">
       <img class="brand-logo" src="assets/logo.png" alt="${esc(c.name)}">
-      <span class="season-pill">الموسم ${c.season}</span>
+      <span class="role-pill">${esc(roleName())}</span>
       <div class="spacer"></div>
       <span class="week-pill" id="cloud-status" title="حالة المزامنة السحابية">…</span>
       <div class="week-pill">الأسبوع <b>${c.week}</b></div>
-      <button class="btn sm ghost" data-action="settings" title="الإعدادات">⚙️</button>
+      ${isAdmin() ? `<button class="btn sm ghost" data-action="settings" title="الإعدادات">⚙️</button>` : ""}
+      <button class="btn sm ghost" data-action="logout" title="تسجيل الخروج">🚪</button>
     </div></header>`;
   }
 
@@ -216,16 +336,27 @@
       )
       .join("");
 
-    return `
-      <div class="section-title"><h2>نظرة عامة</h2><span class="hint">ميزانيات الفرق الثلاثة</span></div>
-      <div class="grid cols-3">${teamCards}</div>
-
-      <div class="section-title"><h2>إجراءات سريعة</h2></div>
+    const quickActions = isAdmin()
+      ? `<div class="section-title"><h2>إجراءات سريعة</h2></div>
       <div class="grid cols-3">
         <button class="btn primary block" data-action="new-match">⚽ تسجيل مباراة</button>
         <button class="btn gold block" data-action="go-market">💰 سوق الانتقالات</button>
         <button class="btn block" data-action="awards">🏅 منح جوائز</button>
-      </div>
+      </div>`
+      : "";
+    const weekBox = isAdmin()
+      ? `<div class="section-title"><h2>الأسبوع الحالي</h2></div>
+      <div class="card row between">
+        <div>أنت في الأسبوع <b style="color:var(--gold)">${App.state.club.week}</b></div>
+        <button class="btn sm" data-action="advance-week">إنهاء الأسبوع ▶</button>
+      </div>`
+      : "";
+
+    return `
+      <div class="section-title"><h2>نظرة عامة</h2><span class="hint">ميزانيات الفرق الثلاثة</span></div>
+      <div class="grid cols-3">${teamCards}</div>
+
+      ${quickActions}
 
       <div class="section-title"><h2>الترتيب</h2><span class="hint">من نتائج المباريات</span></div>
       <div class="card" style="overflow:auto">
@@ -235,11 +366,8 @@
         </table>
       </div>
 
-      <div class="section-title"><h2>الأسبوع الحالي</h2></div>
-      <div class="card row between">
-        <div>أنت في الأسبوع <b style="color:var(--gold)">${App.state.club.week}</b></div>
-        <button class="btn sm" data-action="advance-week">إنهاء الأسبوع ▶</button>
-      </div>`;
+      ${upcomingFixturesCard()}
+      ${weekBox}`;
   }
 
   function viewTeams() {
@@ -260,13 +388,13 @@
             </div>
             <div class="row">
               <span class="budget ${t.budget < 0 ? "neg" : "pos"} mono" style="font-size:18px">${fmtMoney(t.budget)}</span>
-              <button class="btn sm ghost" data-action="edit-team" data-id="${t.id}">تعديل</button>
+              ${isAdmin() ? `<button class="btn sm ghost" data-action="edit-team" data-id="${t.id}">تعديل</button>` : ""}
             </div>
           </div>
           <div class="row wrap small muted" style="margin-top:6px">
             <span class="chip">👥 ${players.length}/8</span>
             <span class="chip">🎽 القائد: ${captain ? esc(captain.name) : "—"}</span>
-            <button class="btn sm" data-action="add-player-to" data-id="${t.id}">＋ إضافة لاعب</button>
+            ${isAdmin() ? `<button class="btn sm" data-action="add-player-to" data-id="${t.id}">＋ إضافة لاعب</button>` : ""}
           </div>
           ${list}
         </div>`;
@@ -295,13 +423,13 @@
     </div>`;
 
     const body = list.length
-      ? `<div class="grid cols-2">${list.map((p) => playerCardHTML(p, { actions: true })).join("")}</div>`
+      ? `<div class="grid cols-2">${list.map((p) => playerCardHTML(p, { actions: isAdmin() })).join("")}</div>`
       : `<div class="empty"><div class="big">🎽</div>لا يوجد لاعبون. أضِف أول لاعب.</div>`;
 
     return `<div class="section-title"><h2>اللاعبون</h2>
         <span class="hint">${all.length} لاعب</span>
         <div class="spacer"></div>
-        <button class="btn primary sm" data-action="add-player">＋ لاعب جديد</button>
+        ${isAdmin() ? `<button class="btn primary sm" data-action="add-player">＋ لاعب جديد</button>` : ""}
       </div>
       <div style="margin-bottom:14px">${filters}</div>
       ${body}`;
@@ -320,7 +448,7 @@
             return `<div class="card">
               <div class="row between">
                 <div class="small muted">الأسبوع ${m.week} • ${new Date(m.date).toLocaleDateString("ar")}</div>
-                <button class="btn sm danger" data-action="del-match" data-id="${m.id}">حذف</button>
+                ${isAdmin() ? `<button class="btn sm danger" data-action="del-match" data-id="${m.id}">حذف</button>` : ""}
               </div>
               <div class="row between" style="margin-top:8px;font-size:16px;font-weight:700">
                 <span>${esc(h ? h.name : "؟")}</span>
@@ -333,9 +461,9 @@
           .join("")
       : `<div class="empty"><div class="big">⚽</div>لا توجد مباريات مسجّلة.</div>`;
 
-    return `<div class="section-title"><h2>المباريات</h2>
+    return `<div class="section-title"><h2>النتائج</h2>
         <div class="spacer"></div>
-        <button class="btn primary sm" data-action="new-match">＋ تسجيل مباراة</button>
+        ${isAdmin() ? `<button class="btn primary sm" data-action="new-match">＋ تسجيل مباراة</button>` : ""}
       </div>
       <div class="grid">${list}</div>`;
   }
@@ -343,6 +471,9 @@
   function viewMarket() {
     const mk = App.state.market;
     if (!mk.active) {
+      if (!isAdmin())
+        return `<div class="section-title"><h2>سوق الانتقالات</h2></div>
+          <div class="empty"><div class="big">💰</div>لم يُفتح المزاد بعد. انتظر أن يفتحه المشرف.</div>`;
       const freeCount = App.freeAgents().length;
       return `<div class="section-title"><h2>سوق الانتقالات</h2><span class="hint">مزاد نهاية الأسبوع</span></div>
         <div class="card">
@@ -355,6 +486,7 @@
         </div>`;
     }
 
+    const myTeam = isPresident() ? App.getTeam(myTeamId()) : null;
     const lots = mk.lots
       .map((lot) => {
         const p = App.getPlayer(lot.playerId);
@@ -367,15 +499,23 @@
             : lot.status === "unsold"
             ? `<span class="badge unsold">لم يُبع</span>`
             : `<span class="badge open">مفتوح</span>`;
-        const bidControls =
-          lot.status === "open"
-            ? `<div class="row wrap" style="margin-top:12px;gap:8px">
-                 <select data-bid-team="${lot.id}" style="width:auto;min-width:130px">${teamOptions(highTeam ? highTeam.id : App.state.teams[0].id)}</select>
-                 <input type="number" data-bid-amount="${lot.id}" placeholder="مبلغ المزايدة" style="width:150px" step="100000">
-                 <button class="btn sm primary" data-action="place-bid" data-id="${lot.id}">مزايدة</button>
-                 <button class="btn sm gold" data-action="finalize-lot" data-id="${lot.id}">إرساء ✔</button>
-               </div>`
-            : "";
+        // عناصر المزايدة: المشرف يرى الكل، رئيس النادي يزايد بفريقه فقط، العام لا يزايد
+        let bidControls = "";
+        if (lot.status === "open" && isAdmin()) {
+          bidControls = `<div class="row wrap" style="margin-top:12px;gap:8px">
+               <select data-bid-team="${lot.id}" style="width:auto;min-width:130px">${teamOptions(highTeam ? highTeam.id : App.state.teams[0].id)}</select>
+               <input type="number" data-bid-amount="${lot.id}" placeholder="مبلغ المزايدة" style="width:150px" step="100000">
+               <button class="btn sm primary" data-action="place-bid" data-id="${lot.id}">مزايدة</button>
+               <button class="btn sm gold" data-action="finalize-lot" data-id="${lot.id}">إرساء ✔</button>
+             </div>`;
+        } else if (lot.status === "open" && isPresident() && myTeam) {
+          bidControls = `<div class="row wrap" style="margin-top:12px;gap:8px">
+               <input type="hidden" data-bid-team="${lot.id}" value="${myTeam.id}">
+               <span class="chip"><span style="width:10px;height:10px;border-radius:3px;background:${myTeam.color};display:inline-block"></span> ميزانيتك: ${fmtMoney(myTeam.budget)}</span>
+               <input type="number" data-bid-amount="${lot.id}" placeholder="مبلغ المزايدة" style="width:150px" step="100000">
+               <button class="btn sm primary" data-action="place-bid" data-id="${lot.id}">مزايدة</button>
+             </div>`;
+        }
         const bidsLog = lot.bids.length
           ? `<div class="small muted" style="margin-top:8px">أعلى مزايدة: <b style="color:${highTeam?.color}">${esc(highTeam?.name)}</b> — ${fmtMoney(highest.amount)} • (${lot.bids.length} مزايدة)</div>`
           : `<div class="small muted" style="margin-top:8px">لا مزايدات بعد</div>`;
@@ -390,7 +530,7 @@
 
     return `<div class="section-title"><h2>سوق الانتقالات</h2><span class="hint">أسبوع ${mk.week}</span>
         <div class="spacer"></div>
-        <button class="btn sm danger" data-action="close-market">إغلاق السوق</button>
+        ${isAdmin() ? `<button class="btn sm danger" data-action="close-market">إغلاق السوق</button>` : ""}
       </div>
       <div class="grid cols-2">${lots}</div>`;
   }
@@ -443,19 +583,345 @@
       </div>`;
   }
 
+  /* =========================================================
+     المباريات القادمة (Fixtures)
+     ========================================================= */
+  function fixtureWhen(f) {
+    if (!f.datetime) return "الأسبوع " + (f.week || "?");
+    const d = new Date(f.datetime);
+    if (isNaN(d)) return esc(f.datetime);
+    return d.toLocaleString("ar", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  }
+  function fixtureTeamsHTML(f) {
+    const h = App.getTeam(f.homeTeamId), a = App.getTeam(f.awayTeamId);
+    return `<div class="row between" style="font-weight:800;font-size:16px;gap:10px">
+        <span class="row" style="gap:8px">${h ? teamCrestHTML(h) : ""}<span>${esc(h?.name || "؟")}</span></span>
+        <span class="muted">×</span>
+        <span class="row" style="gap:8px"><span>${esc(a?.name || "؟")}</span>${a ? teamCrestHTML(a) : ""}</span>
+      </div>`;
+  }
+
+  // بطاقة مصغّرة للمباريات القادمة على الرئيسية (لكل الأدوار)
+  function upcomingFixturesCard() {
+    const up = App.state.fixtures.filter((f) => f.status !== "done").slice(0, 4);
+    if (!up.length) return "";
+    const rows = up
+      .map(
+        (f) => `<div style="padding:8px 0;border-bottom:1px solid var(--line)">
+        ${fixtureTeamsHTML(f)}
+        <div class="small muted" style="margin-top:4px">${fixtureWhen(f)}${f.note ? " • " + esc(f.note) : ""}</div>
+      </div>`
+      )
+      .join("");
+    return `<div class="section-title"><h2>المباريات القادمة</h2></div>
+      <div class="card">${rows}</div>`;
+  }
+
+  function viewFixtures() {
+    const admin = isAdmin();
+    const fixtures = App.state.fixtures
+      .slice()
+      .sort((a, b) => (a.status === b.status ? (a.week || 0) - (b.week || 0) : a.status === "done" ? 1 : -1));
+    const list = fixtures.length
+      ? fixtures
+          .map((f) => {
+            const done = f.status === "done";
+            const adminBtns = admin
+              ? `<div class="row wrap" style="margin-top:10px;gap:6px">
+                   <button class="btn sm" data-action="build-lineup" data-id="${f.id}::${f.homeTeamId}">🧩 تشكيلة ${esc(App.getTeam(f.homeTeamId)?.name || "")}</button>
+                   <button class="btn sm" data-action="build-lineup" data-id="${f.id}::${f.awayTeamId}">🧩 تشكيلة ${esc(App.getTeam(f.awayTeamId)?.name || "")}</button>
+                   <button class="btn sm ghost" data-action="edit-fixture" data-id="${f.id}">تعديل</button>
+                   <button class="btn sm ghost" data-action="fixture-done" data-id="${f.id}">${done ? "إرجاع" : "أُقيمت"}</button>
+                   <button class="btn sm danger" data-action="del-fixture" data-id="${f.id}">حذف</button>
+                 </div>`
+              : "";
+            return `<div class="card" style="opacity:${done ? 0.6 : 1}">
+              <div class="row between">
+                <span class="badge ${done ? "sold" : "open"}">${done ? "أُقيمت" : "قادمة"}</span>
+                <span class="small muted">${fixtureWhen(f)}</span>
+              </div>
+              <div style="margin-top:10px">${fixtureTeamsHTML(f)}</div>
+              ${f.note ? `<div class="small muted" style="margin-top:6px">${esc(f.note)}</div>` : ""}
+              ${adminBtns}
+            </div>`;
+          })
+          .join("")
+      : `<div class="empty"><div class="big">📅</div>لا توجد مباريات قادمة${admin ? ". أضِف أول مباراة." : "."}</div>`;
+    return `<div class="section-title"><h2>المباريات القادمة</h2>
+        <div class="spacer"></div>
+        ${admin ? `<button class="btn primary sm" data-action="add-fixture">＋ إضافة مباراة</button>` : ""}
+      </div>
+      <div class="grid">${list}</div>`;
+  }
+
+  function openFixtureForm(fixture) {
+    const f = fixture || { homeTeamId: App.state.teams[0]?.id, awayTeamId: App.state.teams[1]?.id, week: App.state.club.week, datetime: "", note: "" };
+    const body = `
+      <div class="grid cols-2">
+        <label class="field"><span>الفريق الأول</span><select id="fx-home">${teamOptions(f.homeTeamId)}</select></label>
+        <label class="field"><span>الفريق الثاني</span><select id="fx-away">${teamOptions(f.awayTeamId)}</select></label>
+      </div>
+      <div class="grid cols-2">
+        <label class="field"><span>الأسبوع</span><input id="fx-week" type="number" value="${f.week || App.state.club.week}"></label>
+        <label class="field"><span>التاريخ والوقت</span><input id="fx-dt" type="datetime-local" value="${esc(f.datetime || "")}"></label>
+      </div>
+      <label class="field"><span>ملاحظة (اختياري)</span><input id="fx-note" value="${esc(f.note || "")}" placeholder="مثال: الملعب الرئيسي"></label>`;
+    modal({
+      title: fixture ? "تعديل مباراة قادمة" : "مباراة قادمة جديدة",
+      body,
+      foot: `<button class="btn primary" data-save>حفظ</button><button class="btn ghost" data-close>إلغاء</button>`,
+      onOpen(root, close) {
+        $("[data-save]", root).onclick = () => {
+          const homeTeamId = $("#fx-home", root).value;
+          const awayTeamId = $("#fx-away", root).value;
+          if (homeTeamId === awayTeamId) return toast("اختر فريقين مختلفين", "err");
+          const data = {
+            homeTeamId, awayTeamId,
+            week: parseInt($("#fx-week", root).value, 10) || App.state.club.week,
+            datetime: $("#fx-dt", root).value,
+            note: $("#fx-note", root).value.trim(),
+          };
+          if (fixture) App.updateFixture(fixture.id, data);
+          else App.addFixture(data);
+          toast("حُفظت المباراة", "ok");
+          close();
+          render();
+        };
+      },
+    });
+  }
+
+  /* =========================================================
+     التشكيلات (Lineups) — رئيس النادي يبني تشكيلة فريقه
+     ========================================================= */
+  function viewLineups() {
+    const teamId = myTeamId();
+    const team = App.getTeam(teamId);
+    if (!team) return `<div class="empty">لا يوجد فريق مرتبط بحسابك.</div>`;
+    const fixtures = App.teamFixtures(teamId);
+    const cards = fixtures.length
+      ? fixtures
+          .map((f) => {
+            const opp = App.getTeam(f.homeTeamId === teamId ? f.awayTeamId : f.homeTeamId);
+            const lu = App.getLineup(f.id, teamId);
+            const count = lu ? Object.values(lu.assign || {}).filter(Boolean).length : 0;
+            return `<div class="card">
+              <div class="row between">
+                <span class="badge ${f.status === "done" ? "sold" : "open"}">${f.status === "done" ? "أُقيمت" : "قادمة"}</span>
+                <span class="small muted">${fixtureWhen(f)}</span>
+              </div>
+              <div class="row" style="gap:8px;margin-top:8px;font-weight:800">
+                <span>ضد</span> ${opp ? teamCrestHTML(opp) : ""} <span>${esc(opp?.name || "؟")}</span>
+              </div>
+              <div class="small muted" style="margin-top:6px">${lu ? `الخطة ${esc(lu.formationId)} • ${count} لاعب` : "لم تُبنَ التشكيلة بعد"}</div>
+              <div class="row wrap" style="margin-top:10px;gap:8px">
+                <button class="btn sm primary" data-action="build-lineup" data-id="${f.id}::${teamId}">🧩 ${lu ? "تعديل" : "بناء"} التشكيلة</button>
+                ${lu ? `<button class="btn sm gold" data-action="export-lineup" data-id="${f.id}::${teamId}">🖼️ تصدير PNG</button>` : ""}
+              </div>
+            </div>`;
+          })
+          .join("")
+      : `<div class="empty"><div class="big">🧩</div>لا توجد مباريات قادمة لفريقك بعد.<br><span class="small">يضيفها المشرف في «المباريات القادمة».</span></div>`;
+    return `<div class="section-title"><h2>تشكيلات ${esc(team.name)}</h2><span class="hint">ابنِ تشكيلة كل مباراة وصدّرها صورة</span></div>
+      <div class="grid">${cards}</div>`;
+  }
+
+  // معاينة الملعب (HTML) — تُستخدم داخل البنّاء
+  function pitchPreviewHTML(team, formationId, assign) {
+    const slots = App.formationSlots(formationId);
+    const tokens = slots
+      .map((s, i) => {
+        const p = assign[i] ? App.getPlayer(assign[i]) : null;
+        const label = p ? (p.number || (p.name || "?").trim().charAt(0)) : "?";
+        const name = p ? p.name : "—";
+        return `<div class="pitch-token" style="left:${s.x * 100}%;top:${(1 - s.y) * 100}%">
+          <span class="pt-badge" style="background:${team.color}">${esc(String(label))}</span>
+          <span class="pt-name">${esc(name)}</span>
+        </div>`;
+      })
+      .join("");
+    return `<div class="pitch">${tokens}</div>`;
+  }
+
+  function openLineupBuilder(fixtureId, teamId) {
+    const team = App.getTeam(teamId);
+    const fixture = App.getFixture(fixtureId);
+    if (!team || !fixture) return toast("بيانات غير مكتملة", "err");
+    const players = App.teamPlayers(teamId);
+    if (!players.length) return toast("لا يوجد لاعبون في هذا الفريق", "err");
+    const saved = App.getLineup(fixtureId, teamId);
+    let formationId = saved?.formationId || "2-2-1";
+    let assign = Object.assign({}, saved?.assign || {});
+
+    const body = document.createElement("div");
+    function renderBody() {
+      const slots = App.formationSlots(formationId);
+      // نظّف الإسنادات الزائدة عن عدد المراكز
+      Object.keys(assign).forEach((k) => { if (+k >= slots.length) delete assign[k]; });
+      const formationOpts = App.FORMATIONS.map(
+        (f) => `<option value="${f.id}" ${f.id === formationId ? "selected" : ""}>${f.label} (${f.lines.reduce((a, b) => a + b, 0) + 1})</option>`
+      ).join("");
+      const slotRows = slots
+        .map((s, i) => {
+          const opts = `<option value="">—</option>` + players
+            .map((p) => `<option value="${p.id}" ${assign[i] === p.id ? "selected" : ""}>${esc(p.name)}${p.number ? " #" + esc(p.number) : ""}</option>`)
+            .join("");
+          return `<div class="row" style="gap:8px;margin-bottom:6px;align-items:center">
+            <span class="chip" style="min-width:52px;justify-content:center">${esc(s.role)}</span>
+            <select data-slot="${i}" style="flex:1">${opts}</select>
+          </div>`;
+        })
+        .join("");
+      body.innerHTML = `
+        <label class="field"><span>الخطة</span><select id="lu-formation">${formationOpts}</select></label>
+        ${pitchPreviewHTML(team, formationId, assign)}
+        <div class="section-title" style="margin:12px 0 6px"><h2 style="font-size:15px">المراكز</h2></div>
+        ${slotRows}`;
+      $("#lu-formation", body).onchange = (e) => { formationId = e.target.value; renderBody(); };
+      body.querySelectorAll("[data-slot]").forEach((sel) => {
+        sel.onchange = () => {
+          const i = sel.getAttribute("data-slot");
+          const pid = sel.value;
+          // امنع تكرار نفس اللاعب في مركزين
+          if (pid) Object.keys(assign).forEach((k) => { if (assign[k] === pid) delete assign[k]; });
+          if (pid) assign[i] = pid; else delete assign[i];
+          renderBody();
+        };
+      });
+    }
+    renderBody();
+
+    modal({
+      title: "تشكيلة " + team.name,
+      body,
+      foot: `<button class="btn primary" data-save>حفظ</button>
+             <button class="btn gold" data-export>🖼️ حفظ وتصدير PNG</button>
+             <button class="btn ghost" data-close>إغلاق</button>`,
+      onOpen(root, close) {
+        const doSave = () => App.saveLineup(fixtureId, teamId, { formationId, assign });
+        $("[data-save]", root).onclick = () => { doSave(); toast("حُفظت التشكيلة", "ok"); close(); render(); };
+        $("[data-export]", root).onclick = () => { doSave(); close(); render(); exportLineupPNG(fixtureId, teamId); };
+      },
+    });
+  }
+
+  /* ---------- تصدير التشكيلة صورة PNG (canvas) ---------- */
+  function exportLineupPNG(fixtureId, teamId) {
+    const team = App.getTeam(teamId);
+    const fixture = App.getFixture(fixtureId);
+    const lu = App.getLineup(fixtureId, teamId);
+    if (!team || !fixture || !lu) return toast("لا توجد تشكيلة للتصدير", "err");
+    const opp = App.getTeam(fixture.homeTeamId === teamId ? fixture.awayTeamId : fixture.homeTeamId);
+    const slots = App.formationSlots(lu.formationId);
+
+    const W = 900, H = 1280, HEAD = 200;
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d");
+
+    function draw(crestImg) {
+      // خلفية عامة
+      ctx.fillStyle = "#0d1836"; ctx.fillRect(0, 0, W, H);
+      // رأس
+      ctx.fillStyle = "#111f45"; ctx.fillRect(0, 0, W, HEAD);
+      ctx.fillStyle = team.color; ctx.fillRect(0, HEAD - 6, W, 6);
+      if (crestImg) { try { ctx.drawImage(crestImg, W - 150, 30, 120, 120); } catch (e) {} }
+      ctx.textAlign = "right"; ctx.direction = "rtl";
+      ctx.fillStyle = "#fff"; ctx.font = "bold 46px 'Segoe UI', Tahoma, sans-serif";
+      ctx.fillText(team.name, W - 40, 78);
+      ctx.fillStyle = "#a7b2d8"; ctx.font = "26px 'Segoe UI', Tahoma, sans-serif";
+      ctx.fillText("ضد " + (opp?.name || "؟") + " • " + fixtureWhen(fixture), W - 40, 120);
+      ctx.fillStyle = "#c9a24a"; ctx.font = "bold 28px 'Segoe UI', Tahoma, sans-serif";
+      ctx.fillText("الخطة " + lu.formationId, W - 40, 162);
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#7d8bb5"; ctx.font = "22px 'Segoe UI', Tahoma, sans-serif";
+      ctx.fillText(App.state.club.name, 40, 120);
+
+      // الملعب
+      const px = 30, py = HEAD + 20, pw = W - 60, ph = H - HEAD - 50;
+      const grad = ctx.createLinearGradient(0, py, 0, py + ph);
+      grad.addColorStop(0, "#1f7a43"); grad.addColorStop(1, "#176036");
+      ctx.fillStyle = grad; ctx.fillRect(px, py, pw, ph);
+      // خطوط الملعب
+      ctx.strokeStyle = "rgba(255,255,255,0.55)"; ctx.lineWidth = 3;
+      ctx.strokeRect(px + 8, py + 8, pw - 16, ph - 16);
+      ctx.beginPath(); ctx.moveTo(px + 8, py + ph / 2); ctx.lineTo(px + pw - 8, py + ph / 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(px + pw / 2, py + ph / 2, 70, 0, Math.PI * 2); ctx.stroke();
+      // منطقتا الجزاء
+      const boxW = pw * 0.5, boxH = ph * 0.12;
+      ctx.strokeRect(px + (pw - boxW) / 2, py + 8, boxW, boxH);
+      ctx.strokeRect(px + (pw - boxW) / 2, py + ph - 8 - boxH, boxW, boxH);
+
+      // اللاعبون
+      slots.forEach((s, i) => {
+        const p = lu.assign[i] ? App.getPlayer(lu.assign[i]) : null;
+        const cx = px + s.x * pw;
+        const cy = py + (1 - s.y) * ph;
+        const r = 34;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fillStyle = p ? team.color : "rgba(0,0,0,0.35)";
+        ctx.fill();
+        ctx.lineWidth = 3; ctx.strokeStyle = "#fff"; ctx.stroke();
+        ctx.textAlign = "center"; ctx.direction = "rtl";
+        ctx.fillStyle = "#fff"; ctx.font = "bold 28px 'Segoe UI', Tahoma, sans-serif";
+        const label = p ? String(p.number || (p.name || "?").trim().charAt(0)) : "?";
+        ctx.fillText(label, cx, cy + 10);
+        // الاسم
+        const nm = p ? p.name : s.role;
+        ctx.font = "bold 22px 'Segoe UI', Tahoma, sans-serif";
+        const tw = ctx.measureText(nm).width + 16;
+        ctx.fillStyle = "rgba(13,24,54,0.85)";
+        ctx.fillRect(cx - tw / 2, cy + r + 6, tw, 30);
+        ctx.fillStyle = "#fff";
+        ctx.fillText(nm, cx, cy + r + 28);
+      });
+
+      // تنزيل
+      try {
+        const url = canvas.toDataURL("image/png");
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `تشكيلة-${team.name}-${(opp?.name || "")}.png`.replace(/\s+/g, "_");
+        a.click();
+        toast("تم تصدير الصورة", "ok");
+      } catch (e) {
+        console.error(e);
+        toast("تعذّر التصدير", "err");
+      }
+    }
+
+    // حمّل شعار الفريق ثم ارسم (وإن فشل، ارسم بدونه)
+    if (team.logo) {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => draw(img);
+      img.onerror = () => draw(null);
+      img.src = team.logo;
+    } else {
+      draw(null);
+    }
+  }
+
   const VIEWS = {
     dashboard: viewDashboard,
     teams: viewTeams,
     players: viewPlayers,
     matches: viewMatches,
+    fixtures: viewFixtures,
     market: viewMarket,
     ledger: viewLedger,
+    lineups: viewLineups,
   };
 
   /* =========================================================
      التطبيق (Render + Router)
      ========================================================= */
   function render() {
+    // لا جلسة → شاشة الدخول
+    if (!session) { renderLogin(); return; }
+    // تأكد أن التبويب الحالي مسموح للدور، وإلا اذهب لأول تبويب مسموح
+    const tabs = roleTabs();
+    if (!tabs.some((t) => t.key === route)) route = tabs[0].key;
     document.body.innerHTML =
       renderTopbar() +
       `<main class="app" id="app">${(VIEWS[route] || viewDashboard)()}</main>` +
@@ -497,8 +963,21 @@
     });
   }
 
+  // أفعال يقتصر تنفيذها على المشرف
+  const ADMIN_ACTIONS = new Set([
+    "settings", "advance-week", "new-match", "del-match", "awards",
+    "add-player", "add-player-to", "edit-player", "eval-player", "del-player",
+    "edit-team", "open-market-random", "open-market-manual", "finalize-lot",
+    "close-market", "export", "import",
+    "add-fixture", "edit-fixture", "del-fixture", "fixture-done",
+  ]);
+
   function handleAction(action, id) {
+    if (ADMIN_ACTIONS.has(action) && !isAdmin())
+      return toast("لا تملك صلاحية لهذا الإجراء", "err");
     switch (action) {
+      case "logout":
+        return confirmBox("تسجيل الخروج من الحساب الحالي؟", logout);
       case "settings": return openSettings();
       case "advance-week":
         return confirmBox("إنهاء الأسبوع الحالي والانتقال للأسبوع التالي؟", () => {
@@ -537,6 +1016,26 @@
         return confirmBox("إغلاق السوق؟ اللاعبون غير المُباعين يبقون أحرارًا.", () => { App.closeMarket(); toast("أُغلق السوق"); go("dashboard"); });
       case "export": return doExport();
       case "import": return doImport();
+      // المباريات القادمة
+      case "add-fixture": return openFixtureForm(null);
+      case "edit-fixture": return openFixtureForm(App.getFixture(id));
+      case "del-fixture":
+        return confirmBox("حذف هذه المباراة القادمة؟", () => { App.deleteFixture(id); toast("حُذفت"); render(); }, true);
+      case "fixture-done":
+        App.updateFixture(id, { status: App.getFixture(id)?.status === "done" ? "upcoming" : "done" });
+        return render();
+      // التشكيلة (id = "fixtureId::teamId")
+      case "build-lineup": {
+        const [fid, tid] = String(id).split("::");
+        const teamId = tid || myTeamId();
+        if (!teamId) return toast("لا يوجد فريق", "err");
+        if (isPresident() && teamId !== myTeamId()) return toast("لا تملك صلاحية", "err");
+        return openLineupBuilder(fid, teamId);
+      }
+      case "export-lineup": {
+        const [fid, tid] = String(id).split("::");
+        return exportLineupPNG(fid, tid || myTeamId());
+      }
     }
   }
 
@@ -980,12 +1479,21 @@
         </div>`
       )
       .join("");
+    const codesHTML = App.state.teams
+      .map(
+        (t) => `<label class="field"><span>كلمة مرور رئيس ${esc(t.name)}</span>
+          <input data-teamcode="${t.id}" value="${esc(t.code || "")}"></label>`
+      )
+      .join("");
     const body = `
       <label class="field"><span>اسم النادي</span><input id="s-name" value="${esc(c.name)}"></label>
       <div class="grid cols-2">
         <label class="field"><span>العملة</span><input id="s-cur" value="${esc(c.currency)}"></label>
         <label class="field"><span>الأسبوع الحالي</span><input id="s-week" type="number" value="${c.week}"></label>
       </div>
+      <div class="section-title" style="margin:8px 0"><h2 style="font-size:15px">كلمات المرور والصلاحيات</h2><span class="hint">حماية على مستوى الواجهة</span></div>
+      <label class="field"><span>كلمة مرور المشرف</span><input id="s-admincode" value="${esc(c.adminCode || "")}"></label>
+      ${codesHTML}
       <div class="section-title" style="margin:8px 0"><h2 style="font-size:15px">معايير الفلوس</h2></div>
       ${rulesHTML}
       <div class="section-title" style="margin:14px 0 8px"><h2 style="font-size:15px">معايير التقييم (الطاقة)</h2><span class="hint">نقاط كل حدث</span></div>
@@ -1033,6 +1541,11 @@
           c.name = $("#s-name", root).value.trim() || c.name;
           c.currency = $("#s-cur", root).value.trim() || c.currency;
           c.week = parseInt($("#s-week", root).value, 10) || c.week;
+          c.adminCode = $("#s-admincode", root).value.trim() || c.adminCode;
+          root.querySelectorAll("[data-teamcode]").forEach((inp) => {
+            const t = App.getTeam(inp.getAttribute("data-teamcode"));
+            if (t) t.code = inp.value.trim() || t.code;
+          });
           root.querySelectorAll("[data-rule]").forEach((inp) => {
             App.state.moneyRules[inp.getAttribute("data-rule")] = parseInt(inp.value, 10) || 0;
           });

@@ -58,10 +58,12 @@ header.topbar {
   height: 46px; width: auto; max-width: 60vw; display: block;
   border-radius: 10px; object-fit: contain;
 }
-.season-pill {
+.season-pill, .role-pill {
   background: var(--card-2); border: 1px solid var(--line);
   padding: 5px 12px; border-radius: 999px; font-size: 12px; color: var(--muted);
+  white-space: nowrap;
 }
+.role-pill { color: var(--brand); border-color: color-mix(in srgb, var(--brand) 45%, var(--line)); }
 .brand h1 { font-size: 18px; margin: 0; }
 .brand small { color: var(--muted); font-size: 12px; }
 .spacer { flex: 1; }
@@ -252,3 +254,57 @@ tr:last-child td { border-bottom: none; }
 .pill-toggle { display: inline-flex; background: #0e1830; border: 1px solid var(--line); border-radius: 999px; padding: 3px; gap: 3px; }
 .pill-toggle button { border: none; background: none; color: var(--muted); padding: 6px 14px; border-radius: 999px; cursor: pointer; font-family: inherit; font-size: 13px; }
 .pill-toggle button.active { background: var(--brand); color: #fff; font-weight: 700; }
+
+/* ---------- شاشة الدخول ---------- */
+.login-wrap {
+  min-height: 100vh; display: grid; place-items: center; padding: 24px;
+}
+.login-card {
+  width: 100%; max-width: 380px; text-align: center;
+}
+.login-logo {
+  width: 100%; max-width: 240px; height: auto; margin: 4px auto 0; display: block; border-radius: 12px;
+}
+.login-card input {
+  text-align: center; font-size: 16px; letter-spacing: 2px;
+}
+.role-teams { display: grid; gap: 10px; }
+.role-team {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  background: var(--card-2); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 14px; cursor: pointer; color: var(--text);
+  font-family: inherit; font-size: 15px; font-weight: 700;
+}
+.role-team:hover { background: #24365f; }
+.role-team .team-crest { width: 40px; height: 40px; }
+
+/* ---------- معاينة الملعب (بنّاء التشكيلة) ---------- */
+.pitch {
+  position: relative; width: 100%; aspect-ratio: 3 / 4; margin: 6px 0 4px;
+  border-radius: 14px; border: 2px solid rgba(255,255,255,0.25);
+  background:
+    repeating-linear-gradient(0deg, #1c7340 0 12.5%, #18683a 12.5% 25%);
+  overflow: hidden;
+}
+.pitch::before {
+  content: ""; position: absolute; left: 6%; right: 6%; top: 50%;
+  border-top: 2px solid rgba(255,255,255,0.35);
+}
+.pitch::after {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 90px; height: 90px; transform: translate(-50%, -50%);
+  border: 2px solid rgba(255,255,255,0.35); border-radius: 50%;
+}
+.pitch-token {
+  position: absolute; transform: translate(-50%, -50%);
+  display: flex; flex-direction: column; align-items: center; gap: 3px; width: 74px;
+}
+.pt-badge {
+  width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+  color: #fff; font-weight: 800; border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+.pt-name {
+  font-size: 11px; font-weight: 700; color: #fff; text-align: center;
+  background: rgba(13,24,54,0.7); padding: 1px 6px; border-radius: 6px;
+  max-width: 74px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
