@@ -995,17 +995,27 @@
       // رأس
       ctx.fillStyle = "#111f45"; ctx.fillRect(0, 0, W, HEAD);
       ctx.fillStyle = team.color; ctx.fillRect(0, HEAD - 6, W, 6);
-      if (crestImg) { try { ctx.drawImage(crestImg, W - 150, 30, 120, 120); } catch (e) {} }
+      // شعار الفريق أعلى اليسار (مع حفظ نسبة الأبعاد حتى لا يتشوّه)
+      if (crestImg && crestImg.width) {
+        try {
+          const cs = 120;
+          const sc = Math.min(cs / crestImg.width, cs / crestImg.height);
+          const dw = crestImg.width * sc, dh = crestImg.height * sc;
+          ctx.drawImage(crestImg, 40 + (cs - dw) / 2, 40 + (cs - dh) / 2, dw, dh);
+        } catch (e) {}
+      }
+      // نصوص العنوان على اليمين (RTL) — بعيدة عن الشعار فلا تتداخل معه
       ctx.textAlign = "right"; ctx.direction = "rtl";
-      ctx.fillStyle = "#fff"; ctx.font = "bold 46px 'Segoe UI', Tahoma, sans-serif";
-      ctx.fillText(team.name, W - 40, 78);
-      ctx.fillStyle = "#a7b2d8"; ctx.font = "26px 'Segoe UI', Tahoma, sans-serif";
-      ctx.fillText("ضد " + (opp?.name || "؟") + " • " + fixtureWhen(fixture), W - 40, 120);
-      ctx.fillStyle = "#c9a24a"; ctx.font = "bold 28px 'Segoe UI', Tahoma, sans-serif";
-      ctx.fillText("الخطة " + lu.formationId, W - 40, 162);
-      ctx.textAlign = "left";
-      ctx.fillStyle = "#7d8bb5"; ctx.font = "22px 'Segoe UI', Tahoma, sans-serif";
-      ctx.fillText(App.state.club.name, 40, 120);
+      ctx.fillStyle = "#fff"; ctx.font = "bold 44px 'Segoe UI', Tahoma, sans-serif";
+      ctx.fillText(team.name, W - 40, 74);
+      ctx.fillStyle = "#a7b2d8"; ctx.font = "24px 'Segoe UI', Tahoma, sans-serif";
+      ctx.fillText("ضد " + (opp?.name || "؟") + " • " + fixtureWhen(fixture), W - 40, 114);
+      ctx.fillStyle = "#c9a24a"; ctx.font = "bold 26px 'Segoe UI', Tahoma, sans-serif";
+      ctx.fillText("الخطة " + lu.formationId, W - 40, 154);
+      // اسم النادي أسفل اليسار (تحت الشعار)
+      ctx.textAlign = "left"; ctx.direction = "rtl";
+      ctx.fillStyle = "#7d8bb5"; ctx.font = "20px 'Segoe UI', Tahoma, sans-serif";
+      ctx.fillText(App.state.club.name, 40, 182);
 
       // الملعب
       const px = 30, py = HEAD + 20, pw = W - 60, ph = H - HEAD - 50;
@@ -1033,6 +1043,8 @@
           // صورة اللاعب داخل دائرة (تغطية مع قصّ)
           ctx.save();
           ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.closePath(); ctx.clip();
+          // خلفية بلون الفريق خلف الصورة (تظهر جميلة للصور المُزالة خلفيتها)
+          ctx.fillStyle = team.color; ctx.fillRect(cx - r, cy - r, 2 * r, 2 * r);
           const scale = Math.max((2 * r) / photo.width, (2 * r) / photo.height);
           const dw = photo.width * scale, dh = photo.height * scale;
           try { ctx.drawImage(photo, cx - dw / 2, cy - dh / 2, dw, dh); } catch (e) {}
@@ -1094,6 +1106,60 @@
     });
     loadImages(srcs, draw);
   }
+
+  // إزالة خلفية الصورة (تعبئة أرضية من الحواف) — تعمل أفضل مع خلفية بسيطة/موحّدة.
+  // تُبقي الوجه/الجسم وتجعل ما يشبه لون الحواف شفافًا، ثم تقصّ حول الموضوع.
+  function removeImageBackground(dataUrl, cb) {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const maxD = 512;
+        let w = img.width, h = img.height;
+        const scale = Math.min(1, maxD / Math.max(w, h));
+        w = Math.max(1, Math.round(w * scale)); h = Math.max(1, Math.round(h * scale));
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        const x = c.getContext("2d");
+        x.drawImage(img, 0, 0, w, h);
+        const id = x.getImageData(0, 0, w, h);
+        const d = id.data;
+        // متوسط لون الخلفية من عيّنات على الحواف
+        let br = 0, bg = 0, bb = 0, n = 0;
+        const sample = (px, py) => { const i = (py * w + px) * 4; br += d[i]; bg += d[i + 1]; bb += d[i + 2]; n++; };
+        const sx = Math.max(1, Math.floor(w / 24)), sy = Math.max(1, Math.floor(h / 24));
+        for (let px = 0; px < w; px += sx) { sample(px, 0); sample(px, h - 1); }
+        for (let py = 0; py < h; py += sy) { sample(0, py); sample(w - 1, py); }
+        br /= n; bg /= n; bb /= n;
+        const thr = 46; // حساسية التشابه مع الخلفية
+        const near = (i) => {
+          const dr = d[i] - br, dg = d[i + 1] - bg, db = d[i + 2] - bb;
+          return Math.sqrt(dr * dr + dg * dg + db * db) < thr;
+        };
+        // تعبئة من الحواف: يشمل فقط الخلفية المتّصلة بالحافة (لا يمسّ ألوان الوجه المشابهة)
+        const visited = new Uint8Array(w * h);
+        const stack = [];
+        const pushpx = (px, py) => {
+          if (px < 0 || py < 0 || px >= w || py >= h) return;
+          const idx = py * w + px; if (visited[idx]) return;
+          visited[idx] = 1; stack.push(idx);
+        };
+        for (let px = 0; px < w; px++) { pushpx(px, 0); pushpx(px, h - 1); }
+        for (let py = 0; py < h; py++) { pushpx(0, py); pushpx(w - 1, py); }
+        while (stack.length) {
+          const idx = stack.pop(), i = idx * 4;
+          if (!near(i)) continue;
+          d[i + 3] = 0; // شفاف
+          const px = idx % w, py = (idx / w) | 0;
+          pushpx(px + 1, py); pushpx(px - 1, py); pushpx(px, py + 1); pushpx(px, py - 1);
+        }
+        x.putImageData(id, 0, 0);
+        cb(c.toDataURL("image/png"));
+      } catch (e) { console.error("فشل إزالة الخلفية", e); cb(dataUrl); }
+    };
+    img.onerror = () => cb(dataUrl);
+    img.src = dataUrl;
+  }
+  App.removeImageBackground = removeImageBackground;
 
   // تحميل مجموعة صور (شعارات/صور لاعبين) ثم استدعاء cb بخريطة {src: Image|null}
   function loadImages(srcs, cb) {
@@ -1312,6 +1378,12 @@
         <label class="field"><span>التقييم (الطاقة)</span><input id="pl-rating" type="number" min="${App.RATING_MIN}" max="${App.RATING_MAX}" value="${p.rating != null ? p.rating : App.RATING_START}"></label>
         <label class="field"><span>صورة (اختياري)</span><input id="pl-photo" type="file" accept="image/*"></label>
       </div>
+      <div id="pl-photo-wrap" style="display:none;margin-bottom:12px">
+        <div class="row" style="gap:12px;align-items:center">
+          <img id="pl-photo-prev" alt="" style="width:64px;height:64px;border-radius:50%;object-fit:cover;background:#0e1830;border:1px solid var(--line)">
+          <label class="row" style="gap:8px;cursor:pointer;margin:0"><input type="checkbox" id="pl-nobg" checked style="width:auto"> <span class="small">إزالة الخلفية (أفضل مع خلفية بسيطة)</span></label>
+        </div>
+      </div>
       <div class="small muted" style="margin-bottom:10px">يبدأ اللاعب من ${App.RATING_START} ويتغيّر بالتقييم لاحقًا (الحد الأقصى ${App.RATING_MAX}).</div>
       <details style="margin-bottom:6px"><summary class="muted small" style="cursor:pointer">مهارات وصفية اختيارية (لا تؤثر على التقييم)</summary>
       <div style="margin-top:10px">${statsInputs}</div></details>`;
@@ -1321,11 +1393,24 @@
       body,
       foot: `<button class="btn primary" data-save>حفظ</button><button class="btn ghost" data-close>إلغاء</button>`,
       onOpen(root, close) {
+        let originalPhoto = p.photo || null; // الصورة كما أُدخلت قبل المعالجة
+        const wrap = $("#pl-photo-wrap", root), prev = $("#pl-photo-prev", root), nobg = $("#pl-nobg", root);
+        const showPrev = (src) => { if (src) { wrap.style.display = "block"; prev.src = src; } else { wrap.style.display = "none"; } };
+        const applyPhoto = () => {
+          if (!originalPhoto) { photoData = null; showPrev(null); return; }
+          if (nobg.checked) {
+            removeImageBackground(originalPhoto, (out) => { photoData = out; showPrev(out); });
+          } else {
+            photoData = originalPhoto; showPrev(originalPhoto);
+          }
+        };
+        if (originalPhoto) showPrev(originalPhoto); // عند التعديل: أظهر الحالية كما هي
+        nobg.onchange = applyPhoto;
         $("#pl-photo", root).onchange = (e) => {
           const f = e.target.files[0];
           if (!f) return;
           const rd = new FileReader();
-          rd.onload = () => (photoData = rd.result);
+          rd.onload = () => { originalPhoto = rd.result; applyPhoto(); };
           rd.readAsDataURL(f);
         };
         $("[data-save]", root).onclick = () => {
