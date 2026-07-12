@@ -255,6 +255,14 @@
     if (!Array.isArray(s.market.lots)) s.market.lots = [];
     if (typeof s.market.active !== "boolean") s.market.active = false;
     if (typeof s.market.week !== "number") s.market.week = s.club.week || 1;
+    // تطبيع كل عنصر مزاد: لا بد أن يملك مصفوفة bids وحالة صحيحة،
+    // وإلا انهارت صفحة السوق عند قراءة lot.bids.length.
+    s.market.lots.forEach((lot) => {
+      if (!Array.isArray(lot.bids)) lot.bids = [];
+      if (lot.status !== "sold" && lot.status !== "unsold") lot.status = "open";
+      if (typeof lot.finalPrice !== "number") lot.finalPrice = 0;
+      if (lot.winnerTeamId === undefined) lot.winnerTeamId = null;
+    });
     // سوق نشط بلا لاعبين لا معنى له — نعتبره مغلقًا حتى لا تظهر صفحة فارغة
     if (s.market.active && !s.market.lots.length) s.market.active = false;
     return s;
