@@ -27,6 +27,18 @@
   App.toast = toast;
 
   /* ---------- نافذة منبثقة ---------- */
+  // عدّاد النوافذ المفتوحة: يمنع المزامنة السحابية من إعادة رسم الصفحة
+  // (وحذف النافذة وما بداخلها) أثناء تفاعل المستخدم مع نافذة منبثقة.
+  let openModals = 0;
+  let pendingRender = false;
+  App.modalsOpen = () => openModals > 0;
+
+  // يُستدعى عند إغلاق آخر نافذة: يطبّق أي حالة سحابية مؤجّلة ثم يعيد الرسم إن لزم.
+  function afterModalsClosed() {
+    if (typeof App.onModalsClosed === "function") App.onModalsClosed();
+    if (pendingRender) { pendingRender = false; render(); }
+  }
+
   function modal({ title, body, foot, onOpen }) {
     const back = document.createElement("div");
     back.className = "modal-backdrop";
@@ -40,7 +52,14 @@
     if (typeof body !== "string" && body) $(".m-body", back).appendChild(body);
     if (foot) $(".m-foot", back).innerHTML = foot;
     document.body.appendChild(back);
-    const close = () => back.remove();
+    openModals++;
+    const close = () => {
+      if (back._closed) return;
+      back._closed = true;
+      back.remove();
+      openModals = Math.max(0, openModals - 1);
+      if (openModals === 0) afterModalsClosed();
+    };
     back.addEventListener("click", (e) => {
       if (e.target === back || e.target.hasAttribute("data-close")) close();
     });
@@ -923,6 +942,9 @@
      التطبيق (Render + Router)
      ========================================================= */
   function render() {
+    // نافذة منبثقة مفتوحة → أجّل إعادة الرسم حتى تُغلق، حتى لا نمسح
+    // النافذة وما يكتبه المستخدم بداخلها (يحدث مع تحديثات المزامنة السحابية).
+    if (openModals > 0) { pendingRender = true; return; }
     // لا جلسة → شاشة الدخول
     if (!session) { renderLogin(); return; }
     // تأكد أن التبويب الحالي مسموح للدور، وإلا اذهب لأول تبويب مسموح

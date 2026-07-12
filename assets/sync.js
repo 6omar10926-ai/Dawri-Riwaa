@@ -49,6 +49,18 @@
     return clean;
   }
 
+  // آخر حالة سحابية وصلت أثناء فتح نافذة منبثقة (تُطبَّق عند إغلاقها)
+  let pendingRemote = null;
+
+  // يستدعيه ui.js عند إغلاق آخر نافذة منبثقة: يطبّق الحالة المؤجّلة إن وُجدت.
+  App.onModalsClosed = function () {
+    if (!pendingRemote) return;
+    const clean = pendingRemote;
+    pendingRemote = null;
+    App.applyCloudState(clean);
+    if (App.render) App.render();
+  };
+
   function pushState() {
     if (!cloud.enabled || !cloud.ref) return;
     const rev = uid();
@@ -100,7 +112,14 @@
           // تجاهل صدى كتابتنا نفسها
           if (remote.__rev && remote.__rev === cloud.lastRev) return;
           cloud.lastRev = remote.__rev || null;
-          App.applyCloudState(stripMeta(remote));
+          const clean = stripMeta(remote);
+          // نافذة منبثقة مفتوحة (مثلاً تسجيل مباراة) → أجّل التطبيق حتى تُغلق،
+          // حتى لا نمسح النافذة وما أدخله المستخدم بداخلها.
+          if (App.modalsOpen && App.modalsOpen()) {
+            pendingRemote = clean;
+            return;
+          }
+          App.applyCloudState(clean);
           if (App.render) App.render();
         },
         (err) => {
