@@ -430,6 +430,43 @@
     return sel.slice(0, size);
   };
 
+  // إحصائيات مشتقّة للمباراة (استحواذ تقديري + تسديدات + أخطاء...) من الأحداث المسجّلة
+  App.matchStats = function (m) {
+    const events = (m && m.events) || [];
+    const per = (teamId) => {
+      const c = {};
+      events.filter((e) => e.teamId === teamId).forEach((e) => (c[e.type] = (c[e.type] || 0) + 1));
+      return c;
+    };
+    const H = per(m.homeTeamId), A = per(m.awayTeamId);
+    const goals = (c) => (c.goal || 0) + (c.penaltyGoal || 0);
+    const saves = (c) => (c.save || 0) + (c.penaltySave || 0) + (c.freeKickSave || 0);
+    const fouls = (c) => (c.seriousFoul || 0) + (c.generalFoul || 0) + (c.causePenalty || 0);
+    // مؤشّر "لمسات" تقديري للاستحواذ: التمريرات أساسه + مساهمات كرويّة أخرى
+    const touches = (c) => (c.pass || 0) + (c.assist || 0) + goals(c) + (c.interception || 0) + (c.nutmeg || 0) + saves(c);
+    // تسديدات على المرمى = أهدافه + تصدّيات الخصم (كل تصدٍّ يعني تسديدة على المرمى)
+    const sot = (mine, opp) => goals(mine) + saves(opp);
+    const shots = (mine, opp) => sot(mine, opp) + (mine.missedChance || 0);
+    const tH = touches(H), tA = touches(A), tot = tH + tA;
+    const posH = tot ? Math.round((tH / tot) * 100) : 50;
+    const side = (mine, opp, pos) => ({
+      possession: pos,
+      goals: goals(mine),
+      shots: shots(mine, opp),
+      shotsOnTarget: sot(mine, opp),
+      passes: mine.pass || 0,
+      assists: mine.assist || 0,
+      interceptions: mine.interception || 0,
+      saves: saves(mine),
+      fouls: fouls(mine),
+      cards: (mine.yellow || 0) + (mine.red || 0),
+      missed: mine.missedChance || 0,
+      // نسبة التحويل: أهداف ÷ تسديدات
+      conversion: shots(mine, opp) ? Math.round((goals(mine) / shots(mine, opp)) * 100) : 0,
+    });
+    return { home: side(H, A, posH), away: side(A, H, 100 - posH), hasData: events.length > 0 };
+  };
+
   /* ---------- المعاملات المالية (مصدر الحقيقة الوحيد للميزانية) ---------- */
   // كل تغيير على ميزانية فريق يمر من هنا: يحدّث budget ويضيف سطر في الدفتر.
   function addTransaction(teamId, amount, reason, meta) {

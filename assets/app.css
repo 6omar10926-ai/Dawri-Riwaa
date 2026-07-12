@@ -450,6 +450,9 @@ tr:last-child td { border-bottom: none; }
 .ms-tn { font-weight: 800; font-size: 14px; text-align: center; }
 .ms-score { font-size: 30px; font-weight: 900; }
 .ms-scorers { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 700; }
+.ms-poss { margin: 6px 0 4px; }
+.ms-poss-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.ms-poss-top b { font-size: 20px; font-weight: 900; }
 .ms-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .ms-val { width: 30px; text-align: center; font-weight: 800; font-variant-numeric: tabular-nums; }
 .ms-bars { flex: 1; }

@@ -1441,20 +1441,44 @@
     });
     const hColor = (h && h.color) || "#888", aColor = (a && a.color) || "#888";
 
+    // صف مقارنة عام (قيمة يمين/يسار + شريط بلون كل فريق)
+    const cmpRow = (label, hv, av, suffix) => {
+      const tot = hv + av, hp = tot ? Math.round((hv / tot) * 100) : 50;
+      const sfx = suffix || "";
+      return `<div class="ms-row">
+        <span class="ms-val">${hv}${sfx}</span>
+        <div class="ms-bars">
+          <div class="ms-label">${esc(label)}</div>
+          <div class="ms-track"><i style="width:${hp}%;background:${hColor}"></i><i style="width:${100 - hp}%;background:${aColor}"></i></div>
+        </div>
+        <span class="ms-val">${av}${sfx}</span>
+      </div>`;
+    };
+
+    // إحصائيات مشتقّة (استحواذ + تسديدات + أخطاء...)
+    const S = App.matchStats(m);
+    const possHTML = `<div class="ms-poss">
+        <div class="ms-poss-top"><b>${S.home.possession}%</b><span class="muted small">الاستحواذ (تقديري)</span><b>${S.away.possession}%</b></div>
+        <div class="ms-track" style="height:14px"><i style="width:${S.home.possession}%;background:${hColor}"></i><i style="width:${S.away.possession}%;background:${aColor}"></i></div>
+      </div>`;
+    const advRows = [
+      ["التسديدات", S.home.shots, S.away.shots, ""],
+      ["على المرمى", S.home.shotsOnTarget, S.away.shotsOnTarget, ""],
+      ["دقّة التحويل", S.home.conversion, S.away.conversion, "%"],
+      ["التمريرات", S.home.passes, S.away.passes, ""],
+      ["قطع الكرات", S.home.interceptions, S.away.interceptions, ""],
+      ["التصدّيات", S.home.saves, S.away.saves, ""],
+      ["الأخطاء", S.home.fouls, S.away.fouls, ""],
+      ["البطاقات", S.home.cards, S.away.cards, ""],
+    ]
+      .filter((r) => r[1] + r[2] > 0)
+      .map((r) => cmpRow(r[0], r[1], r[2], r[3]))
+      .join("");
+
+    // تفصيل كل نوع حدث كما سُجّل
     const rows = App.MATCH_ACTIONS
       .filter((act) => (cH[act.key] || 0) + (cA[act.key] || 0) > 0)
-      .map((act) => {
-        const hv = cH[act.key] || 0, av = cA[act.key] || 0, tot = hv + av;
-        const hp = tot ? Math.round((hv / tot) * 100) : 50;
-        return `<div class="ms-row">
-          <span class="ms-val">${hv}</span>
-          <div class="ms-bars">
-            <div class="ms-label">${esc(act.label)}</div>
-            <div class="ms-track"><i style="width:${hp}%;background:${hColor}"></i><i style="width:${100 - hp}%;background:${aColor}"></i></div>
-          </div>
-          <span class="ms-val">${av}</span>
-        </div>`;
-      })
+      .map((act) => cmpRow(act.label, cH[act.key] || 0, cA[act.key] || 0))
       .join("") || `<div class="small muted" style="text-align:center">لا أحداث مسجّلة في هذه المباراة.</div>`;
 
     const scorersFor = (teamId) => {
@@ -1476,11 +1500,13 @@
         <div class="ms-team">${a ? teamCrestHTML(a) : ""}<div class="ms-tn">${esc(a ? a.name : "؟")}</div></div>
       </div>
       <div class="small muted" style="text-align:center;margin:8px 0 12px">الأسبوع ${m.week} • ${new Date(m.date).toLocaleDateString("ar")}</div>
-      <div class="ms-scorers">
+      ${possHTML}
+      <div class="ms-scorers" style="margin-top:14px">
         <div><div class="small muted">⚽ هدّافو ${esc(h ? h.name : "")}</div>${scorersFor(m.homeTeamId)}</div>
         <div style="text-align:left"><div class="small muted">⚽ هدّافو ${esc(a ? a.name : "")}</div>${scorersFor(m.awayTeamId)}</div>
       </div>
-      <div class="section-title" style="margin:14px 0 8px"><h2 style="font-size:15px">الإحصائيات</h2></div>
+      ${advRows ? `<div class="section-title" style="margin:16px 0 8px"><h2 style="font-size:15px">أبرز الأرقام</h2></div><div class="ms-rows">${advRows}</div>` : ""}
+      <div class="section-title" style="margin:16px 0 8px"><h2 style="font-size:15px">تفصيل الأحداث</h2></div>
       <div class="ms-rows">${rows}</div>`;
 
     modal({ title: "إحصائيات المباراة", body, foot: `<button class="btn ghost" data-close>إغلاق</button>` });
