@@ -50,11 +50,12 @@
     if (pendingRender) { pendingRender = false; render(); }
   }
 
-  function modal({ title, body, foot, onOpen }) {
+  function modal({ title, body, foot, onOpen, size }) {
     const back = document.createElement("div");
-    back.className = "modal-backdrop";
+    // size:"full" → نافذة تملأ الشاشة كصفحة كاملة واضحة بدل نافذة ضيقة
+    back.className = "modal-backdrop" + (size === "full" ? " full" : "");
     back.innerHTML = `
-      <div class="modal" role="dialog">
+      <div class="modal${size === "full" ? " full" : ""}" role="dialog">
         <div class="m-head"><h3>${esc(title)}</h3><button class="x" data-close>×</button></div>
         <div class="m-body"></div>
         ${foot ? `<div class="m-foot"></div>` : ""}
@@ -1632,6 +1633,7 @@
 
     modal({
       title: "🎬 " + home.name + " ضد " + away.name,
+      size: "full",
       body,
       foot: `<button class="btn primary" data-save>💾 حفظ المباراة</button><button class="btn ghost" data-cancel>إلغاء</button>`,
       onOpen(root, close) {
