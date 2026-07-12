@@ -581,14 +581,27 @@
   }
   App.pickRandomForMarket = pickRandomForMarket;
 
+  // قواعد المزايدة: تبدأ من مليون، وكل مزايدة من مضاعفات 200 ألف
+  App.MARKET_MIN_BID = 1_000_000;
+  App.MARKET_BID_STEP = 200_000;
+
+  // أقل مزايدة مسموحة للاعب: أول مزايدة = الحد الأدنى، وما بعدها = الأعلى + الخطوة
+  App.marketMinBid = function (lot) {
+    const highest = lot && lot.bids && lot.bids.length ? lot.bids[lot.bids.length - 1].amount : 0;
+    return highest ? highest + App.MARKET_BID_STEP : App.MARKET_MIN_BID;
+  };
+
   function placeBid(lotId, teamId, amount) {
     const lot = App.state.market.lots.find((l) => l.id === lotId);
     if (!lot || lot.status !== "open") return { ok: false, msg: "المزايدة مغلقة" };
     const team = App.getTeam(teamId);
     if (!team) return { ok: false, msg: "فريق غير موجود" };
-    const highest = lot.bids.length ? lot.bids[lot.bids.length - 1].amount : 0;
-    if (amount <= highest)
-      return { ok: false, msg: "المزايدة يجب أن تكون أعلى من " + fmtMoney(highest) };
+    const step = App.MARKET_BID_STEP;
+    const minAllowed = App.marketMinBid(lot);
+    if (amount % step !== 0)
+      return { ok: false, msg: "المزايدة يجب أن تكون من مضاعفات " + fmtMoney(step) };
+    if (amount < minAllowed)
+      return { ok: false, msg: "أقل مزايدة مسموحة: " + fmtMoney(minAllowed) };
     if (amount > team.budget)
       return { ok: false, msg: "ميزانية الفريق لا تكفي (" + fmtMoney(team.budget) + ")" };
     lot.bids.push({ teamId, amount, at: new Date().toISOString() });

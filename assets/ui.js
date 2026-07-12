@@ -540,20 +540,24 @@
             ? `<span class="badge unsold">لم يُبع</span>`
             : `<span class="badge open">مفتوح</span>`;
         // عناصر المزايدة: المشرف يرى الكل، رئيس النادي يزايد بفريقه فقط، العام لا يزايد
+        const minBid = App.marketMinBid(lot);
+        const bidHint = `<div class="small muted" style="width:100%">أقل مزايدة ${fmtMoney(minBid)} • من مضاعفات ${fmtMoney(App.MARKET_BID_STEP)}</div>`;
         let bidControls = "";
         if (lot.status === "open" && isAdmin()) {
           bidControls = `<div class="row wrap" style="margin-top:12px;gap:8px">
                <select data-bid-team="${lot.id}" style="width:auto;min-width:130px">${teamOptions(highTeam ? highTeam.id : App.state.teams[0].id)}</select>
-               <input type="number" data-bid-amount="${lot.id}" placeholder="مبلغ المزايدة" style="width:150px" step="100000">
+               <input type="number" data-bid-amount="${lot.id}" value="${minBid}" min="${minBid}" step="${App.MARKET_BID_STEP}" style="width:150px">
                <button class="btn sm primary" data-action="place-bid" data-id="${lot.id}">مزايدة</button>
                <button class="btn sm gold" data-action="finalize-lot" data-id="${lot.id}">إرساء ✔</button>
+               ${bidHint}
              </div>`;
         } else if (lot.status === "open" && isPresident() && myTeam) {
           bidControls = `<div class="row wrap" style="margin-top:12px;gap:8px">
                <input type="hidden" data-bid-team="${lot.id}" value="${myTeam.id}">
                <span class="chip"><span style="width:10px;height:10px;border-radius:3px;background:${myTeam.color};display:inline-block"></span> ميزانيتك: ${fmtMoney(myTeam.budget)}</span>
-               <input type="number" data-bid-amount="${lot.id}" placeholder="مبلغ المزايدة" style="width:150px" step="100000">
+               <input type="number" data-bid-amount="${lot.id}" value="${minBid}" min="${minBid}" step="${App.MARKET_BID_STEP}" style="width:150px">
                <button class="btn sm primary" data-action="place-bid" data-id="${lot.id}">مزايدة</button>
+               ${bidHint}
              </div>`;
         }
         const bidsLog = lot.bids.length
@@ -640,13 +644,15 @@
          <div class="auction-bid-amount muted">—</div>`;
 
     // أدوات المشرف: مزايدة سريعة + إرساء والانتقال للتالي
+    const minBid = App.marketMinBid(lot);
     const controls = isAdmin()
       ? `<div class="auction-controls">
           <select data-bid-team="${lot.id}">${teamOptions(highTeam ? highTeam.id : App.state.teams[0].id)}</select>
-          <input type="number" data-bid-amount="${lot.id}" placeholder="مبلغ المزايدة" step="100000">
+          <input type="number" data-bid-amount="${lot.id}" value="${minBid}" min="${minBid}" step="${App.MARKET_BID_STEP}">
           <button class="btn primary" data-action="place-bid" data-id="${lot.id}">＋ مزايدة</button>
           <button class="btn gold" data-action="finalize-lot" data-id="${lot.id}">✔ إرساء والتالي</button>
-        </div>`
+        </div>
+        <div class="muted small" style="text-align:center">أقل مزايدة ${fmtMoney(minBid)} • من مضاعفات ${fmtMoney(App.MARKET_BID_STEP)}</div>`
       : "";
 
     return `<div class="auction-screen">
