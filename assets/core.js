@@ -249,7 +249,14 @@
     s.lineups = s.lineups || {};
     s.ledger = s.ledger || [];
     s.ratingLog = s.ratingLog || [];
+    // تطبيع كائن السوق: قد تصل حالة قديمة أو مزامنة سحابية جزئية بلا مصفوفة
+    // lots، فتنهار صفحة السوق عند قراءة mk.lots.length. نضمن الشكل الصحيح دائمًا.
     s.market = s.market || d.market;
+    if (!Array.isArray(s.market.lots)) s.market.lots = [];
+    if (typeof s.market.active !== "boolean") s.market.active = false;
+    if (typeof s.market.week !== "number") s.market.week = s.club.week || 1;
+    // سوق نشط بلا لاعبين لا معنى له — نعتبره مغلقًا حتى لا تظهر صفحة فارغة
+    if (s.market.active && !s.market.lots.length) s.market.active = false;
     return s;
   }
   function saveLocal() {
