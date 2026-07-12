@@ -542,12 +542,12 @@
       const freeCount = App.freeAgents().length;
       return `<div class="section-title"><h2>سوق الانتقالات</h2><span class="hint">مزاد نهاية الأسبوع</span></div>
         <div class="card">
-          <p class="muted" style="margin-top:0">افتح المزاد باختيار لاعبين أحرار (عشوائي أو يدوي)، ثم تتزايد الفرق عليهم بميزانياتها.</p>
+          <p class="muted" style="margin-top:0">افتح المزاد باختيار لاعبين أحرار عشوائيًا، أو اختر يدويًا أي لاعب (حتى من الفرق) لعرضه للبيع. عند بيع لاعب من فريق تُضاف قيمته لفريقه السابق.</p>
           <div class="row wrap">
-            <button class="btn primary" data-action="open-market-random" ${freeCount ? "" : "disabled"}>🎲 اختيار 8 عشوائي</button>
-            <button class="btn" data-action="open-market-manual" ${freeCount ? "" : "disabled"}>✋ اختيار يدوي</button>
+            <button class="btn primary" data-action="open-market-random" ${freeCount ? "" : "disabled"}>🎲 اختيار 8 أحرار عشوائي</button>
+            <button class="btn" data-action="open-market-manual">✋ اختيار يدوي</button>
           </div>
-          <p class="small muted">اللاعبون الأحرار المتاحون: ${freeCount}</p>
+          <p class="small muted">اللاعبون الأحرار المتاحون: ${freeCount} • إجمالي اللاعبين: ${App.state.players.length}</p>
         </div>`;
     }
 
@@ -1576,6 +1576,19 @@
       return names.length ? names.join("، ") : "—";
     };
 
+    // تشكيلة المباراة: اللاعبون المشاركون (لهم حدث) لكل فريق مع طاقتهم الإجمالية
+    const lineupFor = (teamId) => {
+      const ids = [...new Set(events.filter((e) => e.teamId === teamId && e.playerId).map((e) => e.playerId))];
+      const ps = ids.map((id) => App.getPlayer(id)).filter(Boolean).sort((x, y) => App.playerOverall(y) - App.playerOverall(x));
+      if (!ps.length) return `<div class="small muted">لا لاعبين مسجّلين</div>`;
+      return ps
+        .map((p) => `<div class="row between" style="padding:5px 0;border-bottom:1px solid var(--line)">
+            <span>${esc(p.name)}${p.position ? ` <span class="muted small">${esc(p.position)}</span>` : ""}</span>
+            <span class="mono" style="color:var(--gold);font-weight:800">${App.playerOverall(p)}</span>
+          </div>`)
+        .join("");
+    };
+
     const body = `
       <div class="ms-head">
         <div class="ms-team">${h ? teamCrestHTML(h) : ""}<div class="ms-tn">${esc(h ? h.name : "؟")}</div></div>
@@ -1586,6 +1599,11 @@
       <div class="ms-scorers" style="margin-top:14px">
         <div><div class="small muted">⚽ هدّافو ${esc(h ? h.name : "")}</div>${scorersFor(m.homeTeamId)}</div>
         <div style="text-align:left"><div class="small muted">⚽ هدّافو ${esc(a ? a.name : "")}</div>${scorersFor(m.awayTeamId)}</div>
+      </div>
+      <div class="section-title" style="margin:16px 0 8px"><h2 style="font-size:15px">🧩 تشكيلة المباراة</h2><span class="hint">اللاعب • طاقته الإجمالية</span></div>
+      <div class="grid cols-2">
+        <div class="card" style="padding:12px"><div class="small muted" style="margin-bottom:6px">${esc(h ? h.name : "؟")}</div>${lineupFor(m.homeTeamId)}</div>
+        <div class="card" style="padding:12px"><div class="small muted" style="margin-bottom:6px">${esc(a ? a.name : "؟")}</div>${lineupFor(m.awayTeamId)}</div>
       </div>
       ${advRows ? `<div class="section-title" style="margin:16px 0 8px"><h2 style="font-size:15px">أبرز الأرقام</h2></div><div class="ms-rows">${advRows}</div>` : ""}
       <div class="section-title" style="margin:16px 0 8px"><h2 style="font-size:15px">تفصيل الأحداث</h2></div>
@@ -2073,20 +2091,24 @@
 
   /* ---------- اختيار يدوي للسوق ---------- */
   function openMarketManual() {
-    const free = App.freeAgents();
-    if (!free.length) return toast("لا يوجد لاعبون أحرار", "err");
+    if (!App.state.players.length) return toast("لا يوجد لاعبون", "err");
     const selected = new Set();
-    const body = document.createElement("div");
-    body.innerHTML =
-      `<p class="small muted">اختر اللاعبين للمزاد:</p>` +
-      free
-        .map(
-          (p) => `<label class="row" style="padding:8px;border-bottom:1px solid var(--line);gap:10px">
+    const row = (p) => {
+      const t = App.getTeam(p.teamId);
+      return `<label class="row" style="padding:8px;border-bottom:1px solid var(--line);gap:10px">
           <input type="checkbox" style="width:auto" data-pick="${p.id}">
-          <span>${esc(p.name)} <span class="muted small">(${App.playerOverall(p)})</span></span>
-        </label>`
-        )
-        .join("");
+          <span>${esc(p.name)} <span class="muted small">(${App.playerOverall(p)}) • ${t ? esc(t.name) : "حر"}</span></span>
+        </label>`;
+    };
+    let html = `<p class="small muted">اختر اللاعبين للمزاد (يمكن اختيار لاعبين من الفرق — عند بيعهم تنتقل ملكيّتهم وتُضاف قيمتهم لفريقهم السابق):</p>`;
+    const free = App.freeAgents();
+    if (free.length) html += `<div class="section-title" style="margin:8px 4px 4px"><h2 style="font-size:14px">لاعبون أحرار</h2></div>` + free.map(row).join("");
+    App.state.teams.forEach((t) => {
+      const tp = App.teamPlayers(t.id);
+      if (tp.length) html += `<div class="section-title" style="margin:10px 4px 4px"><h2 style="font-size:14px">${esc(t.name)}</h2></div>` + tp.map(row).join("");
+    });
+    const body = document.createElement("div");
+    body.innerHTML = html;
     modal({
       title: "اختيار لاعبي المزاد",
       body,
