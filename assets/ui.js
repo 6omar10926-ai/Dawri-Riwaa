@@ -1455,12 +1455,8 @@
       </div>`;
     };
 
-    // إحصائيات مشتقّة (استحواذ + تسديدات + أخطاء...)
+    // إحصائيات مشتقّة (تسديدات + أخطاء + كروت + تسطيح...)
     const S = App.matchStats(m);
-    const possHTML = `<div class="ms-poss">
-        <div class="ms-poss-top"><b>${S.home.possession}%</b><span class="muted small">الاستحواذ (تقديري)</span><b>${S.away.possession}%</b></div>
-        <div class="ms-track" style="height:14px"><i style="width:${S.home.possession}%;background:${hColor}"></i><i style="width:${S.away.possession}%;background:${aColor}"></i></div>
-      </div>`;
     const advRows = [
       ["التسديدات", S.home.shots, S.away.shots, ""],
       ["على المرمى", S.home.shotsOnTarget, S.away.shotsOnTarget, ""],
@@ -1469,7 +1465,9 @@
       ["قطع الكرات", S.home.interceptions, S.away.interceptions, ""],
       ["التصدّيات", S.home.saves, S.away.saves, ""],
       ["الأخطاء", S.home.fouls, S.away.fouls, ""],
-      ["البطاقات", S.home.cards, S.away.cards, ""],
+      ["تسطيح الكرة", S.home.nutmeg, S.away.nutmeg, ""],
+      ["كرت أصفر 🟨", S.home.yellow, S.away.yellow, ""],
+      ["كرت أحمر 🟥", S.home.red, S.away.red, ""],
     ]
       .filter((r) => r[1] + r[2] > 0)
       .map((r) => cmpRow(r[0], r[1], r[2], r[3]))
@@ -1500,7 +1498,6 @@
         <div class="ms-team">${a ? teamCrestHTML(a) : ""}<div class="ms-tn">${esc(a ? a.name : "؟")}</div></div>
       </div>
       <div class="small muted" style="text-align:center;margin:8px 0 12px">الأسبوع ${m.week} • ${new Date(m.date).toLocaleDateString("ar")}</div>
-      ${possHTML}
       <div class="ms-scorers" style="margin-top:14px">
         <div><div class="small muted">⚽ هدّافو ${esc(h ? h.name : "")}</div>${scorersFor(m.homeTeamId)}</div>
         <div style="text-align:left"><div class="small muted">⚽ هدّافو ${esc(a ? a.name : "")}</div>${scorersFor(m.awayTeamId)}</div>
