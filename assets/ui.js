@@ -333,6 +333,31 @@
     return Object.values(table).sort((x, y) => y.pts - x.pts || (y.gf - y.ga) - (x.gf - x.ga));
   }
 
+  // تشكيلة الأسبوع (6 لاعبين حسب التقييم) — بطاقة على الملعب
+  function teamOfWeekCard() {
+    const sel = App.teamOfWeek(6);
+    if (!sel.length) return "";
+    const POS_ORDER = ["هجوم", "وسط", "دفاع", "حارس"];
+    const token = (p) => {
+      const team = App.getTeam(p.teamId);
+      const photo = p.photo
+        ? `<img class="totw-photo" src="${p.photo}" alt="">`
+        : `<div class="totw-photo ph">👤</div>`;
+      return `<div class="totw-player">
+        <div class="totw-ovr">${App.playerOverall(p)}</div>
+        ${photo}
+        <div class="totw-name">${esc(p.name)}</div>
+        <div class="totw-pos">${esc(p.position || "")}${team ? " • " + esc(team.name) : ""}</div>
+      </div>`;
+    };
+    const lines = POS_ORDER.map((pos) => sel.filter((p) => p.position === pos));
+    const others = sel.filter((p) => !POS_ORDER.includes(p.position || ""));
+    if (others.length) lines[1] = lines[1].concat(others); // غير المصنّفين في خط الوسط
+    const rows = lines.filter((l) => l.length).map((l) => `<div class="totw-line">${l.map(token).join("")}</div>`).join("");
+    return `<div class="section-title"><h2>🏅 تشكيلة الأسبوع</h2><span class="hint">أفضل 6 حسب التقييم • أسبوع ${App.state.club.week}</span></div>
+      <div class="card totw">${rows}</div>`;
+  }
+
   function viewDashboard() {
     const teams = App.state.teams;
     const teamCards = teams
@@ -398,6 +423,7 @@
         </table>
       </div>
 
+      ${teamOfWeekCard()}
       ${upcomingFixturesCard()}
       ${weekBox}`;
   }
@@ -493,6 +519,7 @@
                 <span>${esc(a ? a.name : "؟")}</span>
               </div>
               <div class="small muted" style="margin-top:8px">${m.events.length} حدث • أُضيف ${fmtMoney(money)} ${esc(App.state.club.currency)}${ratedPlayers ? " • حُدّث تقييم " + ratedPlayers + " لاعب" : ""}</div>
+              <button class="btn sm block" style="margin-top:10px" data-action="match-stats" data-id="${m.id}">📊 إحصائيات المباراة</button>
             </div>`;
           })
           .join("")
@@ -961,7 +988,8 @@
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext("2d");
 
-    function draw(crestImg) {
+    function draw(imgs) {
+      const crestImg = imgs[team.logo];
       // خلفية عامة
       ctx.fillStyle = "#0d1836"; ctx.fillRect(0, 0, W, H);
       // رأس
@@ -994,22 +1022,48 @@
       ctx.strokeRect(px + (pw - boxW) / 2, py + 8, boxW, boxH);
       ctx.strokeRect(px + (pw - boxW) / 2, py + ph - 8 - boxH, boxW, boxH);
 
-      // اللاعبون
+      // اللاعبون (بصورهم إن وُجدت)
       slots.forEach((s, i) => {
         const p = lu.assign[i] ? App.getPlayer(lu.assign[i]) : null;
         const cx = px + s.x * pw;
         const cy = py + (1 - s.y) * ph;
-        const r = 34;
-        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
-        ctx.fillStyle = p ? team.color : "rgba(0,0,0,0.35)";
-        ctx.fill();
-        ctx.lineWidth = 3; ctx.strokeStyle = "#fff"; ctx.stroke();
-        ctx.textAlign = "center"; ctx.direction = "rtl";
-        ctx.fillStyle = "#fff"; ctx.font = "bold 28px 'Segoe UI', Tahoma, sans-serif";
-        const label = p ? String(p.number || (p.name || "?").trim().charAt(0)) : "?";
-        ctx.fillText(label, cx, cy + 10);
-        // الاسم
+        const r = 42;
+        const photo = p && p.photo ? imgs[p.photo] : null;
+        if (photo) {
+          // صورة اللاعب داخل دائرة (تغطية مع قصّ)
+          ctx.save();
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.closePath(); ctx.clip();
+          const scale = Math.max((2 * r) / photo.width, (2 * r) / photo.height);
+          const dw = photo.width * scale, dh = photo.height * scale;
+          try { ctx.drawImage(photo, cx - dw / 2, cy - dh / 2, dw, dh); } catch (e) {}
+          ctx.restore();
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.lineWidth = 3; ctx.strokeStyle = team.color; ctx.stroke();
+          ctx.lineWidth = 1; ctx.strokeStyle = "#fff"; ctx.stroke();
+          // شارة الرقم في الزاوية
+          if (p.number) {
+            const bx = cx + r * 0.72, by = cy - r * 0.72;
+            ctx.beginPath(); ctx.arc(bx, by, 15, 0, Math.PI * 2);
+            ctx.fillStyle = team.color; ctx.fill();
+            ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke();
+            ctx.textAlign = "center"; ctx.fillStyle = "#fff";
+            ctx.font = "bold 17px 'Segoe UI', Tahoma, sans-serif";
+            ctx.fillText(String(p.number), bx, by + 6);
+          }
+        } else {
+          // لا صورة → دائرة ملوّنة بالرقم/الحرف (السلوك السابق)
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.fillStyle = p ? team.color : "rgba(0,0,0,0.35)";
+          ctx.fill();
+          ctx.lineWidth = 3; ctx.strokeStyle = "#fff"; ctx.stroke();
+          ctx.textAlign = "center"; ctx.direction = "rtl";
+          ctx.fillStyle = "#fff"; ctx.font = "bold 30px 'Segoe UI', Tahoma, sans-serif";
+          const label = p ? String(p.number || (p.name || "?").trim().charAt(0)) : "?";
+          ctx.fillText(label, cx, cy + 11);
+        }
+        // الاسم أسفل الدائرة
         const nm = p ? p.name : s.role;
+        ctx.textAlign = "center"; ctx.direction = "rtl";
         ctx.font = "bold 22px 'Segoe UI', Tahoma, sans-serif";
         const tw = ctx.measureText(nm).width + 16;
         ctx.fillStyle = "rgba(13,24,54,0.85)";
@@ -1032,16 +1086,28 @@
       }
     }
 
-    // حمّل شعار الفريق ثم ارسم (وإن فشل، ارسم بدونه)
-    if (team.logo) {
+    // حمّل شعار الفريق وصور اللاعبين ثم ارسم (وإن فشل أي منها يُرسم بدونه)
+    const srcs = [team.logo];
+    slots.forEach((s, i) => {
+      const p = lu.assign[i] ? App.getPlayer(lu.assign[i]) : null;
+      if (p && p.photo) srcs.push(p.photo);
+    });
+    loadImages(srcs, draw);
+  }
+
+  // تحميل مجموعة صور (شعارات/صور لاعبين) ثم استدعاء cb بخريطة {src: Image|null}
+  function loadImages(srcs, cb) {
+    const map = {};
+    const uniq = [...new Set(srcs.filter(Boolean))];
+    if (!uniq.length) return cb(map);
+    let left = uniq.length;
+    uniq.forEach((src) => {
       const img = new Image();
       img.crossOrigin = "anonymous";
-      img.onload = () => draw(img);
-      img.onerror = () => draw(null);
-      img.src = team.logo;
-    } else {
-      draw(null);
-    }
+      img.onload = () => { map[src] = img; if (--left === 0) cb(map); };
+      img.onerror = () => { map[src] = null; if (--left === 0) cb(map); };
+      img.src = src;
+    });
   }
 
   const VIEWS = {
@@ -1178,6 +1244,7 @@
       case "eval-player": return openEvaluate(id);
       case "player-detail": return openPlayerDetail(id);
       case "player-stats": return openPlayerStats(id);
+      case "match-stats": return openMatchStats(id);
       case "del-player":
         return confirmBox("حذف هذا اللاعب نهائيًا؟", () => {
           App.state.players = App.state.players.filter((p) => p.id !== id);
@@ -1359,6 +1426,64 @@
         };
       },
     });
+  }
+
+  /* ---------- إحصائيات المباراة (مرتّبة لكل فريق) ---------- */
+  function openMatchStats(matchId) {
+    const m = App.state.matches.find((x) => x.id === matchId);
+    if (!m) return toast("المباراة غير موجودة", "err");
+    const h = App.getTeam(m.homeTeamId), a = App.getTeam(m.awayTeamId);
+    const events = m.events || [];
+    const cH = {}, cA = {};
+    events.forEach((ev) => {
+      const bag = ev.teamId === m.homeTeamId ? cH : ev.teamId === m.awayTeamId ? cA : null;
+      if (bag) bag[ev.type] = (bag[ev.type] || 0) + 1;
+    });
+    const hColor = (h && h.color) || "#888", aColor = (a && a.color) || "#888";
+
+    const rows = App.MATCH_ACTIONS
+      .filter((act) => (cH[act.key] || 0) + (cA[act.key] || 0) > 0)
+      .map((act) => {
+        const hv = cH[act.key] || 0, av = cA[act.key] || 0, tot = hv + av;
+        const hp = tot ? Math.round((hv / tot) * 100) : 50;
+        return `<div class="ms-row">
+          <span class="ms-val">${hv}</span>
+          <div class="ms-bars">
+            <div class="ms-label">${esc(act.label)}</div>
+            <div class="ms-track"><i style="width:${hp}%;background:${hColor}"></i><i style="width:${100 - hp}%;background:${aColor}"></i></div>
+          </div>
+          <span class="ms-val">${av}</span>
+        </div>`;
+      })
+      .join("") || `<div class="small muted" style="text-align:center">لا أحداث مسجّلة في هذه المباراة.</div>`;
+
+    const scorersFor = (teamId) => {
+      const map = {};
+      events
+        .filter((e) => e.teamId === teamId && (e.type === "goal" || e.type === "penaltyGoal") && e.playerId)
+        .forEach((e) => { map[e.playerId] = (map[e.playerId] || 0) + 1; });
+      const names = Object.keys(map).map((pid) => {
+        const p = App.getPlayer(pid);
+        return (p ? esc(p.name) : "") + (map[pid] > 1 ? ` (${map[pid]})` : "");
+      });
+      return names.length ? names.join("، ") : "—";
+    };
+
+    const body = `
+      <div class="ms-head">
+        <div class="ms-team">${h ? teamCrestHTML(h) : ""}<div class="ms-tn">${esc(h ? h.name : "؟")}</div></div>
+        <div class="ms-score mono">${m.homeScore} - ${m.awayScore}</div>
+        <div class="ms-team">${a ? teamCrestHTML(a) : ""}<div class="ms-tn">${esc(a ? a.name : "؟")}</div></div>
+      </div>
+      <div class="small muted" style="text-align:center;margin:8px 0 12px">الأسبوع ${m.week} • ${new Date(m.date).toLocaleDateString("ar")}</div>
+      <div class="ms-scorers">
+        <div><div class="small muted">⚽ هدّافو ${esc(h ? h.name : "")}</div>${scorersFor(m.homeTeamId)}</div>
+        <div style="text-align:left"><div class="small muted">⚽ هدّافو ${esc(a ? a.name : "")}</div>${scorersFor(m.awayTeamId)}</div>
+      </div>
+      <div class="section-title" style="margin:14px 0 8px"><h2 style="font-size:15px">الإحصائيات</h2></div>
+      <div class="ms-rows">${rows}</div>`;
+
+    modal({ title: "إحصائيات المباراة", body, foot: `<button class="btn ghost" data-close>إغلاق</button>` });
   }
 
   /* ---------- إحصائيات اللاعب (للعرض العام) ---------- */

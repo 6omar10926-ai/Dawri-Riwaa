@@ -407,6 +407,29 @@
       .slice()
       .sort((a, b) => new Date(b.date) - new Date(a.date));
 
+  // تشكيلة الأسبوع: 6 لاعبين مبنية على تقييماتهم (طاقاتهم) بخطة 1-2-2-1
+  // (حارس + مدافعان + وسطان + مهاجم)، وتُكمَّل من الأعلى تقييمًا عند نقص مركز.
+  App.teamOfWeek = function (size) {
+    size = size || 6;
+    const players = App.state.players.slice();
+    const byRating = (a, b) => App.playerOverall(b) - App.playerOverall(a);
+    const used = new Set();
+    const take = (pos, n) => {
+      const picks = players
+        .filter((p) => p.position === pos && !used.has(p.id))
+        .sort(byRating)
+        .slice(0, n);
+      picks.forEach((p) => used.add(p.id));
+      return picks;
+    };
+    let sel = [...take("حارس", 1), ...take("دفاع", 2), ...take("وسط", 2), ...take("هجوم", 1)];
+    if (sel.length < size) {
+      const fill = players.filter((p) => !used.has(p.id)).sort(byRating).slice(0, size - sel.length);
+      sel = sel.concat(fill);
+    }
+    return sel.slice(0, size);
+  };
+
   /* ---------- المعاملات المالية (مصدر الحقيقة الوحيد للميزانية) ---------- */
   // كل تغيير على ميزانية فريق يمر من هنا: يحدّث budget ويضيف سطر في الدفتر.
   function addTransaction(teamId, amount, reason, meta) {

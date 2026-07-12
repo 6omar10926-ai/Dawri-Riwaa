@@ -429,3 +429,30 @@ tr:last-child td { border-bottom: none; }
   .auction-name { font-size: 30px; }
   .auction-bid-amount { font-size: 42px; }
 }
+
+/* ===== تشكيلة الأسبوع ===== */
+.totw { background: linear-gradient(180deg, #1f7a43, #14522f); border-color: #0f3f24; }
+.totw-line { display: flex; justify-content: center; gap: 16px; margin: 12px 0; flex-wrap: wrap; }
+.totw-player { width: 88px; text-align: center; position: relative; }
+.totw-photo { width: 58px; height: 58px; border-radius: 50%; object-fit: cover; border: 2px solid var(--gold); background: #0e1830; margin: 0 auto; display: block; }
+.totw-photo.ph { display: grid; place-items: center; font-size: 26px; }
+.totw-ovr {
+  position: absolute; top: -4px; right: 16px;
+  background: var(--gold); color: #0b1330; font-weight: 900; font-size: 12px;
+  width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; border: 2px solid #0d1836;
+}
+.totw-name { font-weight: 800; font-size: 13px; margin-top: 5px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.totw-pos { font-size: 10px; color: rgba(255,255,255,0.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ===== إحصائيات المباراة ===== */
+.ms-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ms-team { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.ms-tn { font-weight: 800; font-size: 14px; text-align: center; }
+.ms-score { font-size: 30px; font-weight: 900; }
+.ms-scorers { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 700; }
+.ms-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.ms-val { width: 30px; text-align: center; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ms-bars { flex: 1; }
+.ms-label { text-align: center; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+.ms-track { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: #0e1830; }
+.ms-track i { display: block; height: 100%; }
