@@ -523,7 +523,11 @@
     }
 
     const myTeam = isPresident() ? App.getTeam(myTeamId()) : null;
-    const lots = mk.lots
+    // كشف اللاعبين واحدًا تلو الآخر: نعرض حتى اللاعب الحالي فقط، والباقي مخفي
+    const curIdx = App.marketCurrentIndex(mk);
+    const revealed = mk.lots.slice(0, Math.min(curIdx + 1, mk.lots.length));
+    const hiddenCount = mk.lots.length - revealed.length;
+    const lots = revealed
       .map((lot) => {
         const p = App.getPlayer(lot.playerId);
         if (!p) return "";
@@ -564,11 +568,104 @@
       })
       .join("");
 
+    const hiddenHint = hiddenCount
+      ? `<div class="card" style="text-align:center;border-style:dashed">
+          <div class="big" style="font-size:30px">🔒</div>
+          <div class="muted">${hiddenCount} لاعب قادم — يظهر بعد الإرساء على الحالي</div>
+        </div>`
+      : "";
+
     return `<div class="section-title"><h2>سوق الانتقالات</h2><span class="hint">أسبوع ${mk.week}</span>
         <div class="spacer"></div>
+        ${isAdmin() ? `<button class="btn sm gold" data-action="auction-screen">🖥️ اعرض على الشاشة</button>` : ""}
         ${isAdmin() ? `<button class="btn sm danger" data-action="close-market">إغلاق السوق</button>` : ""}
       </div>
-      <div class="grid cols-2">${lots}</div>`;
+      <div class="grid cols-2">${lots}</div>
+      ${hiddenHint}`;
+  }
+
+  /* ---------- شاشة عرض المزاد المباشر (لعرضها على شاشة كبيرة) ---------- */
+  function viewAuctionScreen() {
+    const mk = App.state.market;
+    const backBtn = `<button class="btn ghost" data-action="go-market">← رجوع للسوق</button>`;
+    if (!mk || !mk.active) {
+      return `<div class="auction-screen">
+        <div class="auction-empty"><div class="big">💰</div>لا يوجد مزاد جارٍ حاليًا.</div>
+        <div class="auction-bar">${backBtn}</div>
+      </div>`;
+    }
+    const total = mk.lots.length;
+    const idx = App.marketCurrentIndex(mk);
+    const resolved = mk.lots.filter((l) => l.status !== "open").length;
+    const lot = mk.lots[idx];
+
+    // انتهى المزاد (لا لاعب حالي)
+    if (!lot) {
+      const soldList = mk.lots
+        .filter((l) => l.status === "sold")
+        .map((l) => {
+          const p = App.getPlayer(l.playerId), t = App.getTeam(l.winnerTeamId);
+          return `<div class="row between" style="padding:8px 0;border-bottom:1px solid var(--line)">
+            <span>${esc(p ? p.name : "")}</span>
+            <span class="mono" style="color:${t?.color}">${esc(t?.name || "")} — ${fmtMoney(l.finalPrice)}</span>
+          </div>`;
+        })
+        .join("");
+      return `<div class="auction-screen">
+        <div class="auction-done">
+          <div class="big">🏁</div>
+          <h2>انتهى المزاد</h2>
+          <div class="card" style="max-width:520px;margin:12px auto;text-align:right">${soldList || '<div class="muted">لم يُبع أحد</div>'}</div>
+        </div>
+        <div class="auction-bar">${backBtn}</div>
+      </div>`;
+    }
+
+    const p = App.getPlayer(lot.playerId);
+    const ovr = p ? App.playerOverall(p) : "؟";
+    const photo = p && p.photo
+      ? `<img class="auction-photo" src="${p.photo}" alt="">`
+      : `<div class="auction-photo ph">👤</div>`;
+    const highest = lot.bids.length ? lot.bids[lot.bids.length - 1] : null;
+    const highTeam = highest ? App.getTeam(highest.teamId) : null;
+
+    const bidBox = highest
+      ? `<div class="auction-bid-label">أعلى مزايدة</div>
+         <div class="auction-bid-amount">${fmtMoney(highest.amount)}</div>
+         <div class="auction-bid-team" style="color:${highTeam?.color}">
+           <span class="dot" style="background:${highTeam?.color}"></span>${esc(highTeam?.name || "")}
+         </div>
+         <div class="muted small" style="margin-top:6px">${lot.bids.length} مزايدة</div>`
+      : `<div class="auction-bid-label">لا مزايدات بعد</div>
+         <div class="auction-bid-amount muted">—</div>`;
+
+    // أدوات المشرف: مزايدة سريعة + إرساء والانتقال للتالي
+    const controls = isAdmin()
+      ? `<div class="auction-controls">
+          <select data-bid-team="${lot.id}">${teamOptions(highTeam ? highTeam.id : App.state.teams[0].id)}</select>
+          <input type="number" data-bid-amount="${lot.id}" placeholder="مبلغ المزايدة" step="100000">
+          <button class="btn primary" data-action="place-bid" data-id="${lot.id}">＋ مزايدة</button>
+          <button class="btn gold" data-action="finalize-lot" data-id="${lot.id}">✔ إرساء والتالي</button>
+        </div>`
+      : "";
+
+    return `<div class="auction-screen">
+      <div class="auction-top">
+        <span class="chip">لاعب ${Math.min(idx + 1, total)} من ${total}</span>
+        <span class="chip">أُرسي على ${resolved}</span>
+      </div>
+      <div class="auction-main">
+        <div class="auction-player">
+          ${photo}
+          <div class="auction-ovr">${ovr}</div>
+          <div class="auction-name">${esc(p ? p.name : "؟")}</div>
+          <div class="auction-pos muted">${esc((p && p.position) || "")}${p && p.number ? " • #" + esc(p.number) : ""}</div>
+        </div>
+        <div class="auction-bidbox">${bidBox}</div>
+      </div>
+      ${controls}
+      <div class="auction-bar">${backBtn}</div>
+    </div>`;
   }
 
   let ledgerFilter = "all";
@@ -948,7 +1045,10 @@
     market: viewMarket,
     ledger: viewLedger,
     lineups: viewLineups,
+    auction: viewAuctionScreen,
   };
+  // مسارات تُعرض بملء الشاشة (بدون الشريط العلوي/السفلي) — مناسبة للعرض على شاشة كبيرة
+  const FULLSCREEN_ROUTES = new Set(["auction"]);
 
   /* =========================================================
      التطبيق (Render + Router)
@@ -960,8 +1060,9 @@
     // لا جلسة → شاشة الدخول
     if (!session) { renderLogin(); return; }
     // تأكد أن التبويب الحالي مسموح للدور، وإلا اذهب لأول تبويب مسموح
+    // (المسارات كاملة الشاشة مثل شاشة المزاد مستثناة لأنها ليست تبويبات)
     const tabs = roleTabs();
-    if (!tabs.some((t) => t.key === route)) route = tabs[0].key;
+    if (!FULLSCREEN_ROUTES.has(route) && !tabs.some((t) => t.key === route)) route = tabs[0].key;
     // بناء محتوى التبويب داخل try: لو انهار عرض تبويب بسبب بيانات ناقصة،
     // نُظهر رسالة بدل ترك الصفحة فارغة/معلّقة وبقية الأزرار بلا ربط.
     let main;
@@ -971,7 +1072,11 @@
       console.error("خطأ في عرض التبويب", route, e);
       main = `<div class="empty"><div class="big">⚠️</div>تعذّر عرض هذه الصفحة.<br><span class="small muted">${esc(e && e.message ? e.message : e)}</span></div>`;
     }
-    document.body.innerHTML = renderTopbar() + `<main class="app" id="app">${main}</main>` + renderNav();
+    if (FULLSCREEN_ROUTES.has(route)) {
+      document.body.innerHTML = `<main class="app fullscreen-view" id="app">${main}</main>`;
+    } else {
+      document.body.innerHTML = renderTopbar() + `<main class="app" id="app">${main}</main>` + renderNav();
+    }
     wire();
     if (App.cloud && App.cloud.updateBadge) App.cloud.updateBadge();
   }
@@ -1014,7 +1119,7 @@
     "settings", "advance-week", "new-match", "edit-match", "del-match", "live-match", "live-fixture", "awards",
     "add-player", "add-player-to", "edit-player", "eval-player", "del-player",
     "edit-team", "open-market-random", "open-market-manual", "finalize-lot",
-    "close-market", "export", "import",
+    "close-market", "auction-screen", "export", "import",
     "add-fixture", "edit-fixture", "del-fixture", "fixture-done",
   ]);
 
@@ -1057,6 +1162,7 @@
       case "del-match":
         return confirmBox("حذف المباراة وإرجاع فلوسها وتقييماتها؟", () => { App.deleteMatch(id); toast("حُذفت المباراة"); render(); }, true);
       case "go-market": return go("market");
+      case "auction-screen": return go("auction");
       case "awards": return openAwards();
       case "add-player": return openPlayerForm(null, null);
       case "add-player-to": return openPlayerForm(null, id);
