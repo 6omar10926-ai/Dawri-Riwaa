@@ -558,6 +558,9 @@
     App.state.market = {
       active: true,
       week: App.state.club.week,
+      // currentIndex: اللاعب المعروض حاليًا. يُكشف واحدًا تلو الآخر —
+      // اللاعبون بعده مخفيون حتى يُرسى على الحالي فينتقل للتالي.
+      currentIndex: 0,
       lots: playerIds.map((pid) => ({
         id: uid(),
         playerId: pid,
@@ -594,11 +597,22 @@
   }
   App.placeBid = placeBid;
 
+  // ينتقل للاعب التالي (يكشفه) بعد إرساء اللاعب الحالي أو تخطّيه
+  function advanceMarket(idx) {
+    const mk = App.state.market;
+    if (typeof mk.currentIndex === "number" && idx === mk.currentIndex) {
+      mk.currentIndex = Math.min(mk.currentIndex + 1, mk.lots.length);
+    }
+  }
+
   function finalizeLot(lotId) {
-    const lot = App.state.market.lots.find((l) => l.id === lotId);
+    const mk = App.state.market;
+    const idx = mk.lots.findIndex((l) => l.id === lotId);
+    const lot = mk.lots[idx];
     if (!lot || lot.status !== "open") return;
     if (!lot.bids.length) {
       lot.status = "unsold";
+      advanceMarket(idx);
       save();
       return;
     }
@@ -613,9 +627,18 @@
       refId: lot.id,
     });
     if (player) player.teamId = top.teamId;
+    advanceMarket(idx);
     save();
   }
   App.finalizeLot = finalizeLot;
+
+  // مؤشّر اللاعب المعروض حاليًا (مع دعم أسواق قديمة بلا currentIndex)
+  App.marketCurrentIndex = function (mk) {
+    mk = mk || App.state.market;
+    if (typeof mk.currentIndex === "number") return mk.currentIndex;
+    const i = mk.lots.findIndex((l) => l.status === "open");
+    return i === -1 ? mk.lots.length : i;
+  };
 
   function closeMarket() {
     App.state.market.active = false;
