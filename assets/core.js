@@ -228,6 +228,16 @@
       if (!p.stats) p.stats = {};
     });
     s.matches = s.matches || [];
+    // حماية: تأكّد أن لكل مباراة مصفوفة أحداث ونتيجة، حتى لا تنهار صفحة النتائج
+    // إذا وصلت بيانات ناقصة (من نسخة قديمة أو مزامنة جزئية).
+    s.matches.forEach((m) => {
+      if (!Array.isArray(m.events)) m.events = [];
+      if (typeof m.homeScore !== "number" || typeof m.awayScore !== "number") {
+        const sc = computeMatchScores(m);
+        m.homeScore = sc.home;
+        m.awayScore = sc.away;
+      }
+    });
     s.fixtures = s.fixtures || [];
     s.lineups = s.lineups || {};
     s.ledger = s.ledger || [];
