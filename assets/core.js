@@ -397,6 +397,16 @@
   App.playerRatingLog = (playerId) =>
     App.state.ratingLog.filter((l) => l.playerId === playerId).slice().reverse();
 
+  // مدّة المباراة بالدقائق (تُستخدم لحساب دقائق اللعب)
+  App.MATCH_MINUTES = 15;
+
+  // المباريات التي شارك فيها اللاعب (له حدث فيها) — الأحدث أولًا
+  App.playerMatches = (playerId) =>
+    App.state.matches
+      .filter((m) => Array.isArray(m.events) && m.events.some((e) => e.playerId === playerId))
+      .slice()
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+
   /* ---------- المعاملات المالية (مصدر الحقيقة الوحيد للميزانية) ---------- */
   // كل تغيير على ميزانية فريق يمر من هنا: يحدّث budget ويضيف سطر في الدفتر.
   function addTransaction(teamId, amount, reason, meta) {

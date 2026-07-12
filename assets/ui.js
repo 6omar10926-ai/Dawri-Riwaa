@@ -236,8 +236,9 @@
           </div>`;
       })
       .join("");
+    const clickAttr = opts.clickable ? ` data-action="player-stats" data-id="${p.id}"` : "";
     return `
-      <div class="player-card" data-player="${p.id}">
+      <div class="player-card${opts.clickable ? " clickable" : ""}" data-player="${p.id}"${clickAttr}>
         <div class="pc-top">
           <div class="pc-ovr"><div class="num">${ovr}</div><div class="pos">${esc(p.position || "")}</div></div>
           ${photo}
@@ -279,7 +280,7 @@
       return [TAB.dashboard, TAB.teams, TAB.players, TAB.matches, TAB.fixtures, TAB.market, TAB.ledger];
     if (isPresident()) return [TAB.lineups, TAB.market];
     // عرض عام
-    return [TAB.dashboard, TAB.teams, TAB.matches, TAB.fixtures];
+    return [TAB.dashboard, TAB.teams, TAB.players, TAB.matches, TAB.fixtures];
   }
   let route = "dashboard";
 
@@ -453,9 +454,10 @@
         .join("")}
     </div>`;
 
+    // للمشاهدة العامة: البطاقة قابلة للنقر لعرض إحصائيات اللاعب
     const body = list.length
-      ? `<div class="grid cols-2">${list.map((p) => playerCardHTML(p, { actions: isAdmin() })).join("")}</div>`
-      : `<div class="empty"><div class="big">🎽</div>لا يوجد لاعبون. أضِف أول لاعب.</div>`;
+      ? `<div class="grid cols-2">${list.map((p) => playerCardHTML(p, { actions: isAdmin(), clickable: !isAdmin() })).join("")}</div>`
+      : `<div class="empty"><div class="big">🎽</div>لا يوجد لاعبون.</div>`;
 
     return `<div class="section-title"><h2>اللاعبون</h2>
         <span class="hint">${all.length} لاعب</span>
@@ -1175,6 +1177,7 @@
       case "edit-player": return openPlayerForm(App.getPlayer(id));
       case "eval-player": return openEvaluate(id);
       case "player-detail": return openPlayerDetail(id);
+      case "player-stats": return openPlayerStats(id);
       case "del-player":
         return confirmBox("حذف هذا اللاعب نهائيًا؟", () => {
           App.state.players = App.state.players.filter((p) => p.id !== id);
@@ -1356,6 +1359,63 @@
         };
       },
     });
+  }
+
+  /* ---------- إحصائيات اللاعب (للعرض العام) ---------- */
+  function openPlayerStats(playerId) {
+    const p = App.getPlayer(playerId);
+    if (!p) return toast("اللاعب غير موجود", "err");
+    const MM = App.MATCH_MINUTES || 15;
+    const matches = App.playerMatches(playerId);
+    const totalMatches = matches.length;
+    const totalMinutes = totalMatches * MM;
+    const team = App.getTeam(p.teamId);
+
+    const last2 = matches.slice(0, 2).map((m) => {
+      const myEv = m.events.find((e) => e.playerId === playerId);
+      const myTeamId = myEv ? myEv.teamId : p.teamId;
+      const myTeam = App.getTeam(myTeamId);
+      const oppId = myTeamId === m.homeTeamId ? m.awayTeamId : m.homeTeamId;
+      const opp = App.getTeam(oppId);
+      const myScore = myTeamId === m.homeTeamId ? m.homeScore : m.awayScore;
+      const oppScore = myTeamId === m.homeTeamId ? m.awayScore : m.homeScore;
+      const evCount = m.events.filter((e) => e.playerId === playerId).length;
+      const ratingDelta = App.state.ratingLog
+        .filter((l) => l.matchId === m.id && l.playerId === playerId)
+        .reduce((s, l) => s + (l.applied != null ? l.applied : l.delta || 0), 0);
+      return `<div class="card" style="margin-bottom:10px">
+        <div class="row between">
+          <div class="small muted">${new Date(m.date).toLocaleDateString("ar")} • الأسبوع ${m.week}</div>
+          <span class="mono" style="font-weight:800;font-size:16px">${myScore} - ${oppScore}</span>
+        </div>
+        <div style="margin-top:6px;font-weight:700">${esc(myTeam ? myTeam.name : "")} <span class="muted">ضد</span> ${esc(opp ? opp.name : "؟")}</div>
+        <div class="small muted" style="margin-top:6px">
+          المركز: ${esc(p.position || "—")} • الدقائق: ${MM} د • مساهمات: ${evCount}${ratingDelta ? " • التقييم " + (ratingDelta > 0 ? "+" : "") + ratingDelta : ""}
+        </div>
+      </div>`;
+    }).join("") || `<div class="small muted">لم يلعب أي مباراة بعد.</div>`;
+
+    const photo = p.photo
+      ? `<img class="pc-photo" src="${p.photo}" alt="" style="width:72px;height:72px">`
+      : `<div class="pc-photo" style="width:72px;height:72px">👤</div>`;
+
+    const body = `
+      <div class="row" style="gap:14px;align-items:center">
+        ${photo}
+        <div style="flex:1">
+          <div style="font-size:20px;font-weight:800">${esc(p.name)}</div>
+          <div class="small" style="color:${team ? team.color : "var(--muted)"}">${team ? esc(team.name) : "لاعب حر"}${p.number ? " • #" + esc(p.number) : ""}</div>
+          <div class="small muted">المركز: ${esc(p.position || "—")} • التقييم: <b style="color:var(--gold)">${App.playerOverall(p)}</b></div>
+        </div>
+      </div>
+      <div class="grid cols-2" style="margin:14px 0">
+        <div class="card" style="text-align:center"><div class="muted small">مباريات لعبها</div><div style="font-size:26px;font-weight:800">${totalMatches}</div></div>
+        <div class="card" style="text-align:center"><div class="muted small">إجمالي الدقائق</div><div style="font-size:26px;font-weight:800">${totalMinutes} <span class="small muted">د</span></div></div>
+      </div>
+      <div class="section-title" style="margin:6px 0 8px"><h2 style="font-size:15px">آخر مباراتين</h2></div>
+      ${last2}`;
+
+    modal({ title: "إحصائيات " + p.name, body, foot: `<button class="btn ghost" data-close>إغلاق</button>` });
   }
 
   /* ---------- تفاصيل اللاعب + سجل الحسبة ---------- */

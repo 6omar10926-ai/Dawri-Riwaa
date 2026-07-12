@@ -180,6 +180,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--brand); out
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
 }
+.player-card.clickable { cursor: pointer; transition: transform 0.08s ease, border-color 0.15s ease; }
+.player-card.clickable:hover { transform: translateY(-2px); border-color: var(--brand); }
+.player-card.clickable:active { transform: scale(0.99); }
 .player-card .pc-top { display: flex; gap: 12px; align-items: center; }
 .pc-ovr {
   text-align: center; line-height: 1;
