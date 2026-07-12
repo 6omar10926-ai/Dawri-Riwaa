@@ -157,6 +157,8 @@
   ];
   App.TEAM_IDENTITIES = TEAM_IDENTITIES;
   App.DEFAULT_ADMIN_CODE = "admin";
+  // ميزانية البداية لكل فريق (تُمنح لكل الفرق بالتساوي عند إنشاء دوري جديد)
+  App.START_BUDGET = 20_000_000;
   const OLD_DEFAULT_TEAM_NAMES = /^الفريق (الأول|الثاني|الثالث)$/;
 
   function defaultState() {
@@ -166,7 +168,7 @@
       color: idn.color,
       logo: idn.logo,
       code: idn.code,
-      budget: 0,
+      budget: App.START_BUDGET,
       captainId: null,
     }));
     return {
@@ -222,6 +224,11 @@
       }
     });
     if (!s.club.adminCode) s.club.adminCode = App.DEFAULT_ADMIN_CODE;
+    // ترقية لمرة واحدة: ضبط ميزانية كل فريق على 20 مليون بالضبط.
+    if (!s.club.startBudgetSeeded) {
+      s.teams.forEach((t) => { t.budget = App.START_BUDGET; });
+      s.club.startBudgetSeeded = true;
+    }
     s.players = s.players || [];
     s.players.forEach((p) => {
       if (typeof p.rating !== "number") p.rating = App.RATING_START;
