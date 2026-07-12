@@ -442,15 +442,10 @@
     const goals = (c) => (c.goal || 0) + (c.penaltyGoal || 0);
     const saves = (c) => (c.save || 0) + (c.penaltySave || 0) + (c.freeKickSave || 0);
     const fouls = (c) => (c.seriousFoul || 0) + (c.generalFoul || 0) + (c.causePenalty || 0);
-    // مؤشّر "لمسات" تقديري للاستحواذ: التمريرات أساسه + مساهمات كرويّة أخرى
-    const touches = (c) => (c.pass || 0) + (c.assist || 0) + goals(c) + (c.interception || 0) + (c.nutmeg || 0) + saves(c);
     // تسديدات على المرمى = أهدافه + تصدّيات الخصم (كل تصدٍّ يعني تسديدة على المرمى)
     const sot = (mine, opp) => goals(mine) + saves(opp);
     const shots = (mine, opp) => sot(mine, opp) + (mine.missedChance || 0);
-    const tH = touches(H), tA = touches(A), tot = tH + tA;
-    const posH = tot ? Math.round((tH / tot) * 100) : 50;
-    const side = (mine, opp, pos) => ({
-      possession: pos,
+    const side = (mine, opp) => ({
       goals: goals(mine),
       shots: shots(mine, opp),
       shotsOnTarget: sot(mine, opp),
@@ -459,12 +454,14 @@
       interceptions: mine.interception || 0,
       saves: saves(mine),
       fouls: fouls(mine),
-      cards: (mine.yellow || 0) + (mine.red || 0),
+      yellow: mine.yellow || 0,
+      red: mine.red || 0,
+      nutmeg: mine.nutmeg || 0,
       missed: mine.missedChance || 0,
       // نسبة التحويل: أهداف ÷ تسديدات
       conversion: shots(mine, opp) ? Math.round((goals(mine) / shots(mine, opp)) * 100) : 0,
     });
-    return { home: side(H, A, posH), away: side(A, H, 100 - posH), hasData: events.length > 0 };
+    return { home: side(H, A), away: side(A, H), hasData: events.length > 0 };
   };
 
   /* ---------- المعاملات المالية (مصدر الحقيقة الوحيد للميزانية) ---------- */
