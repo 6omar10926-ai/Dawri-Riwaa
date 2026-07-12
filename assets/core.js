@@ -467,9 +467,21 @@
     const id = match.id;
     // فلوس الأحداث
     match.events.forEach((ev) => {
+      const def = App.matchAction(ev.type);
+      // هدف عكسي: يُحتسب هدفًا للفريق الخصم، فتُضاف قيمة الهدف (فلوسه) لميزانية الخصم
+      if (def && def.scoresOpponent) {
+        const goalAmount = rules.goal || 0;
+        if (goalAmount) {
+          const oppId = ev.teamId === match.homeTeamId ? match.awayTeamId : match.homeTeamId;
+          addTransaction(oppId, goalAmount, "مباراة: هدف (من هدف عكسي للخصم)", {
+            refType: "match",
+            refId: id,
+          });
+        }
+        return;
+      }
       const amount = rules[ev.type] || 0;
       if (!amount) return;
-      const def = App.matchAction(ev.type);
       const pl = ev.playerId ? App.getPlayer(ev.playerId) : null;
       const label = def ? def.label : ev.type;
       const who = pl ? " — " + pl.name : "";
