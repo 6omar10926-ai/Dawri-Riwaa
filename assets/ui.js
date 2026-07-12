@@ -26,6 +26,17 @@
   }
   App.toast = toast;
 
+  // إظهار أي خطأ غير مُلتقَط كرسالة مرئية بدل أن يفشل بصمت (يسهّل معرفة سبب "التعليق").
+  window.addEventListener("error", (e) => {
+    try { toast("خطأ: " + (e.message || (e.error && e.error.message) || "غير معروف"), "err"); } catch (_) {}
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    try {
+      const r = e.reason;
+      toast("خطأ: " + (r && r.message ? r.message : r), "err");
+    } catch (_) {}
+  });
+
   /* ---------- نافذة منبثقة ---------- */
   // عدّاد النوافذ المفتوحة: يمنع المزامنة السحابية من إعادة رسم الصفحة
   // (وحذف النافذة وما بداخلها) أثناء تفاعل المستخدم مع نافذة منبثقة.
@@ -950,10 +961,16 @@
     // تأكد أن التبويب الحالي مسموح للدور، وإلا اذهب لأول تبويب مسموح
     const tabs = roleTabs();
     if (!tabs.some((t) => t.key === route)) route = tabs[0].key;
-    document.body.innerHTML =
-      renderTopbar() +
-      `<main class="app" id="app">${(VIEWS[route] || viewDashboard)()}</main>` +
-      renderNav();
+    // بناء محتوى التبويب داخل try: لو انهار عرض تبويب بسبب بيانات ناقصة،
+    // نُظهر رسالة بدل ترك الصفحة فارغة/معلّقة وبقية الأزرار بلا ربط.
+    let main;
+    try {
+      main = (VIEWS[route] || viewDashboard)();
+    } catch (e) {
+      console.error("خطأ في عرض التبويب", route, e);
+      main = `<div class="empty"><div class="big">⚠️</div>تعذّر عرض هذه الصفحة.<br><span class="small muted">${esc(e && e.message ? e.message : e)}</span></div>`;
+    }
+    document.body.innerHTML = renderTopbar() + `<main class="app" id="app">${main}</main>` + renderNav();
     wire();
     if (App.cloud && App.cloud.updateBadge) App.cloud.updateBadge();
   }
@@ -1000,7 +1017,18 @@
     "add-fixture", "edit-fixture", "del-fixture", "fixture-done",
   ]);
 
+  // غلاف يلتقط أي خطأ أثناء تنفيذ الإجراء (مثل فتح نافذة) فيُظهره كرسالة
+  // بدل أن يفشل الضغط بصمت فتبدو الصفحة "معلّقة" ولا تفتح النافذة.
   function handleAction(action, id) {
+    try {
+      return handleActionImpl(action, id);
+    } catch (e) {
+      console.error("خطأ في تنفيذ الإجراء", action, e);
+      toast("حدث خطأ: " + (e && e.message ? e.message : e), "err");
+    }
+  }
+
+  function handleActionImpl(action, id) {
     if (ADMIN_ACTIONS.has(action) && !isAdmin())
       return toast("لا تملك صلاحية لهذا الإجراء", "err");
     switch (action) {
