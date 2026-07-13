@@ -358,6 +358,22 @@
       <div class="card totw">${rows}</div>`;
   }
 
+  // أبرز صفقات الأسبوع (أعلى الصفقات سعرًا من السوق الحالي + الأرشيف)
+  function topDealsCard() {
+    const deals = App.weekDeals(App.state.club.week).slice(0, 5);
+    if (!deals.length) return "";
+    const rows = deals
+      .map(
+        (d, i) => `<div class="row between" style="padding:8px 0;${i ? "border-top:1px solid var(--line)" : ""}">
+          <span class="row" style="gap:8px"><b class="mono" style="color:var(--gold)">#${i + 1}</b> ${esc(d.playerName)}</span>
+          <span class="mono" style="color:${d.teamColor}">${esc(d.teamName)} — ${fmtMoney(d.price)}</span>
+        </div>`
+      )
+      .join("");
+    return `<div class="section-title"><h2>💸 أبرز صفقات الأسبوع</h2><span class="hint">أعلى الصفقات • أسبوع ${App.state.club.week}</span></div>
+      <div class="card">${rows}</div>`;
+  }
+
   function viewDashboard() {
     const teams = App.state.teams;
     const teamCards = teams
@@ -424,6 +440,7 @@
       </div>
 
       ${teamOfWeekCard()}
+      ${topDealsCard()}
       ${upcomingFixturesCard()}
       ${weekBox}`;
   }
@@ -564,7 +581,7 @@
          <button class="btn" data-action="open-market-manual">✋ تعديل اللاعبين</button>
          <button class="btn sm danger" data-action="close-market">إلغاء</button>`
       : `<span class="hint">بانتظار أن يبدأ المشرف المزاد…</span>`;
-    return `<div class="section-title"><h2>سوق الانتقالات</h2><span class="hint">تحضير — ${mk.lots.length} لاعب</span></div>
+    return `<div class="section-title"><h2>سوق الانتقالات</h2><span class="hint">تحضير — ${mk.lots.length} لاعب</span><div class="spacer"></div>${marketHistoryBtn()}</div>
       <div class="card">
         <p class="muted" style="margin-top:0">اللاعبون جاهزون للمزاد. لكل لاعب ${App.AUCTION_DURATION_MS / 1000} ثانية، وأي مزايدة في آخر ${App.AUCTION_EXTEND_WINDOW_MS / 1000} ثوانٍ تُمدّد الوقت ${App.AUCTION_EXTEND_MS / 1000} ثوانٍ. حد الشراء ${App.marketMaxPerTeam(mk)} لاعبين لكل فريق.</p>
         <div class="row wrap">${startBtn}</div>
@@ -576,10 +593,10 @@
     const mk = App.state.market;
     if (!mk.active) {
       if (!isAdmin())
-        return `<div class="section-title"><h2>سوق الانتقالات</h2></div>
+        return `<div class="section-title"><h2>سوق الانتقالات</h2><div class="spacer"></div>${marketHistoryBtn()}</div>
           <div class="empty"><div class="big">💰</div>لم يُفتح المزاد بعد. انتظر أن يفتحه المشرف.</div>`;
       const freeCount = App.freeAgents().length;
-      return `<div class="section-title"><h2>سوق الانتقالات</h2><span class="hint">مزاد نهاية الأسبوع</span></div>
+      return `<div class="section-title"><h2>سوق الانتقالات</h2><span class="hint">مزاد نهاية الأسبوع</span><div class="spacer"></div>${marketHistoryBtn()}</div>
         <div class="card">
           <p class="muted" style="margin-top:0">نزّل اللاعبين للسوق (عشوائيًا من الأحرار أو يدويًا حتى من الفرق) ثم اضغط «ابدأ السوق». عند بيع لاعب من فريق تُضاف قيمته لفريقه السابق.</p>
           <div class="row wrap">
@@ -656,6 +673,7 @@
         <div class="spacer"></div>
         ${isAdmin() ? `<button class="btn sm gold" data-action="auction-screen">🖥️ اعرض على الشاشة</button>` : ""}
         ${isAdmin() ? `<button class="btn sm danger" data-action="close-market">إغلاق السوق</button>` : ""}
+        ${marketHistoryBtn()}
       </div>
       ${capChips(mk)}
       <div class="grid cols-2">${lots}</div>
@@ -1382,6 +1400,7 @@
         App.openMarket(ids); toast("نُزّل " + ids.length + " لاعب — اضغط ابدأ السوق", "ok"); return render();
       }
       case "open-market-manual": return openMarketManual();
+      case "market-history": return openMarketHistory();
       case "start-market":
         return confirmBox("بدء المزاد؟ سيبدأ مؤقّت أول لاعب فورًا.", () => { App.startMarket(); toast("بدأ السوق ▶️", "ok"); render(); });
       case "place-bid": return doBid(id);
@@ -2217,6 +2236,45 @@
         };
       },
     });
+  }
+
+  /* ---------- أرشيف الأسواق السابقة ---------- */
+  function openMarketHistory() {
+    const hist = (App.state.marketHistory || []).slice().reverse();
+    const body = hist.length
+      ? hist
+          .map((h) => {
+            const dealsHTML = h.deals.length
+              ? h.deals
+                  .map(
+                    (d) => `<div class="row between" style="padding:6px 0;border-top:1px solid var(--line)">
+                      <span>${esc(d.playerName)}</span>
+                      <span class="mono" style="color:${d.teamColor}">${esc(d.teamName)} — ${fmtMoney(d.price)}</span>
+                    </div>`
+                  )
+                  .join("")
+              : `<div class="muted small" style="margin-top:6px">لم تُرسَ أي صفقة</div>`;
+            return `<div class="card" style="margin-bottom:10px">
+              <div class="row between">
+                <b>أسبوع ${h.week}</b>
+                <span class="small muted">${new Date(h.closedAt).toLocaleDateString("ar")} • ${h.deals.length} صفقة${h.unsoldCount ? " • " + h.unsoldCount + " لم يُبع" : ""}</span>
+              </div>
+              ${dealsHTML}
+            </div>`;
+          })
+          .join("")
+      : `<div class="empty"><div class="big">📜</div>لا توجد أسواق سابقة بعد</div>`;
+    modal({
+      title: "الأسواق السابقة",
+      body,
+      foot: `<button class="btn ghost" data-close>إغلاق</button>`,
+    });
+  }
+
+  // زر فتح الأرشيف (يظهر فقط عند وجود أسواق سابقة)
+  function marketHistoryBtn() {
+    const n = (App.state.marketHistory || []).length;
+    return n ? `<button class="btn sm ghost" data-action="market-history">📜 الأسواق السابقة (${n})</button>` : "";
   }
 
   /* ---------- تعديل ميزانية الفريق يدويًا ---------- */
