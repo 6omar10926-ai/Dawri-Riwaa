@@ -178,6 +178,7 @@
       players: [],
       statDefs: App.DEFAULT_STATS.slice(),
       moneyRules: defaultMoneyRules(),
+      customMoneyRules: [], // معايير فلوس مخصّصة يضيفها المشرف {key,label,amount}
       ratingRules: defaultRatingRules(),
       matches: [],
       fixtures: [],
@@ -208,6 +209,7 @@
     // ترقية اسم الدوري القديم إلى الهوية الجديدة
     if (!s.club.name || s.club.name === "دوري الروّاد") s.club.name = d.club.name;
     s.moneyRules = Object.assign(defaultMoneyRules(), s.moneyRules || {});
+    s.customMoneyRules = Array.isArray(s.customMoneyRules) ? s.customMoneyRules : [];
     s.ratingRules = Object.assign(defaultRatingRules(), s.ratingRules || {});
     if (!Array.isArray(s.statDefs) || !s.statDefs.length) s.statDefs = d.statDefs;
     s.teams = s.teams || d.teams;
@@ -644,6 +646,37 @@
     save();
   }
   App.grantAward = grantAward;
+
+  /* ---------- تعديل الميزانية يدويًا + معايير الفلوس المخصّصة ---------- */
+  // تعديل يدوي لمرة واحدة على ميزانية فريق (إضافة أو خصم) يُسجَّل في الدفتر.
+  App.adjustBudget = function (teamId, amount, reason) {
+    amount = Math.round(Number(amount) || 0);
+    if (!App.getTeam(teamId) || !amount) return { ok: false, msg: "أدخل مبلغًا صحيحًا" };
+    addTransaction(teamId, amount, reason && reason.trim() ? reason.trim() : "تعديل يدوي", { refType: "manual" });
+    save();
+    return { ok: true };
+  };
+
+  // معايير مخصّصة: قائمة {key,label,amount} يديرها المشرف ويطبّقها يدويًا على أي فريق.
+  App.addCustomMoneyRule = function (label, amount) {
+    label = (label || "").trim();
+    amount = Math.round(Number(amount) || 0);
+    if (!label) return { ok: false, msg: "اكتب اسم المعيار" };
+    App.state.customMoneyRules.push({ key: "cm_" + uid(), label, amount });
+    save();
+    return { ok: true };
+  };
+  App.updateCustomMoneyRule = function (key, patch) {
+    const r = App.state.customMoneyRules.find((x) => x.key === key);
+    if (!r) return;
+    if (typeof patch.label === "string" && patch.label.trim()) r.label = patch.label.trim();
+    if (patch.amount !== undefined) r.amount = Math.round(Number(patch.amount) || 0);
+    save();
+  };
+  App.removeCustomMoneyRule = function (key) {
+    App.state.customMoneyRules = App.state.customMoneyRules.filter((x) => x.key !== key);
+    save();
+  };
 
   /* ---------- سوق الانتقالات (المزاد) ---------- */
   // إعدادات المزاد بالمؤقّت

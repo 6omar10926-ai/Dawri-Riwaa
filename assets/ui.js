@@ -446,6 +446,7 @@
             </div>
             <div class="row">
               <span class="budget ${t.budget < 0 ? "neg" : "pos"} mono" style="font-size:18px">${fmtMoney(t.budget)}</span>
+              ${isAdmin() ? `<button class="btn sm" data-action="adjust-budget" data-id="${t.id}">💰 الميزانية</button>` : ""}
               ${isAdmin() ? `<button class="btn sm ghost" data-action="edit-team" data-id="${t.id}">تعديل</button>` : ""}
             </div>
           </div>
@@ -1313,7 +1314,7 @@
   const ADMIN_ACTIONS = new Set([
     "settings", "advance-week", "new-match", "edit-match", "del-match", "live-match", "live-fixture", "awards",
     "add-player", "add-player-to", "edit-player", "eval-player", "del-player",
-    "edit-team", "open-market-random", "open-market-manual", "finalize-lot",
+    "edit-team", "adjust-budget", "open-market-random", "open-market-manual", "finalize-lot",
     "start-market", "close-market", "auction-screen", "export", "import",
     "add-fixture", "edit-fixture", "del-fixture", "fixture-done",
   ]);
@@ -1374,6 +1375,7 @@
           App.save(); toast("حُذف اللاعب"); render();
         }, true);
       case "edit-team": return openTeamForm(App.getTeam(id));
+      case "adjust-budget": return openBudgetAdjust(id);
       case "open-market-random": {
         const ids = App.pickRandomForMarket(6);
         if (!ids.length) return toast("لا يوجد لاعبون أحرار", "err");
@@ -2217,6 +2219,75 @@
     });
   }
 
+  /* ---------- تعديل ميزانية الفريق يدويًا ---------- */
+  function openBudgetAdjust(teamId) {
+    const team = App.getTeam(teamId);
+    if (!team) return toast("الفريق غير موجود", "err");
+    const customs = App.state.customMoneyRules || [];
+    const customOpts = customs.length
+      ? `<label class="field"><span>معيار جاهز (اختياري)</span>
+           <select id="ba-rule"><option value="">— مبلغ يدوي —</option>
+             ${customs.map((r) => `<option value="${r.key}" data-amt="${r.amount}" data-label="${esc(r.label)}">${esc(r.label)} (${fmtMoney(r.amount)})</option>`).join("")}
+           </select>
+         </label>`
+      : `<p class="small muted">لإضافة معايير جاهزة قابلة لإعادة الاستخدام: الإعدادات ← معايير الفلوس.</p>`;
+    const body = `
+      <div class="row between" style="margin-bottom:8px">
+        <span class="muted">${esc(team.name)}</span>
+        <span class="budget ${team.budget < 0 ? "neg" : "pos"} mono">${fmtMoney(team.budget)}</span>
+      </div>
+      <div class="pill-toggle" style="margin-bottom:10px">
+        <button type="button" data-sign="add" class="active">إضافة +</button>
+        <button type="button" data-sign="deduct">خصم −</button>
+      </div>
+      <label class="field"><span>المبلغ</span>
+        <input id="ba-amount" type="number" min="0" step="100000" placeholder="مثال: 500000"></label>
+      ${customOpts}
+      <label class="field"><span>السبب</span>
+        <input id="ba-reason" placeholder="مثال: غرامة تأخير / مكافأة خاصة"></label>
+      <p class="small muted" id="ba-preview">الناتج: ${fmtMoney(team.budget)}</p>`;
+    modal({
+      title: "تعديل الميزانية — " + team.name,
+      body,
+      foot: `<button class="btn primary" data-save>تطبيق</button><button class="btn ghost" data-close>إلغاء</button>`,
+      onOpen(root, close) {
+        let sign = "add";
+        const amtInp = $("#ba-amount", root);
+        const reasonInp = $("#ba-reason", root);
+        const ruleSel = $("#ba-rule", root);
+        const preview = $("#ba-preview", root);
+        const magnitude = () => Math.abs(parseInt(amtInp.value, 10) || 0);
+        const delta = () => (sign === "deduct" ? -1 : 1) * magnitude();
+        const refresh = () => { preview.textContent = "الناتج: " + fmtMoney(team.budget + delta()); };
+        root.querySelectorAll("[data-sign]").forEach((b) => {
+          b.onclick = () => {
+            sign = b.getAttribute("data-sign");
+            root.querySelectorAll("[data-sign]").forEach((x) => x.classList.toggle("active", x === b));
+            refresh();
+          };
+        });
+        amtInp.oninput = refresh;
+        if (ruleSel) ruleSel.onchange = () => {
+          const opt = ruleSel.selectedOptions[0];
+          if (!opt || !opt.value) return;
+          const amt = parseInt(opt.getAttribute("data-amt"), 10) || 0;
+          sign = amt < 0 ? "deduct" : "add";
+          root.querySelectorAll("[data-sign]").forEach((x) => x.classList.toggle("active", x.getAttribute("data-sign") === sign));
+          amtInp.value = Math.abs(amt);
+          reasonInp.value = opt.getAttribute("data-label") || reasonInp.value;
+          refresh();
+        };
+        $("[data-save]", root).onclick = () => {
+          const res = App.adjustBudget(teamId, delta(), reasonInp.value);
+          if (!res.ok) return toast(res.msg, "err");
+          toast((delta() < 0 ? "خُصم " : "أُضيف ") + fmtMoney(Math.abs(delta())), "ok");
+          close();
+          render();
+        };
+      },
+    });
+  }
+
   /* ---------- الإعدادات ---------- */
   function openSettings() {
     const c = App.state.club;
@@ -2225,6 +2296,15 @@
         ([k, label]) => `<div class="stat-input">
           <span>${esc(label)}</span>
           <input type="number" step="100000" data-rule="${k}" value="${App.state.moneyRules[k]}">
+        </div>`
+      )
+      .join("");
+    const customRulesHTML = App.state.customMoneyRules
+      .map(
+        (r) => `<div class="row" style="gap:8px;margin-bottom:6px">
+          <input value="${esc(r.label)}" data-cmlabel="${r.key}" style="flex:1" placeholder="اسم المعيار">
+          <input type="number" step="100000" value="${r.amount}" data-cmamt="${r.key}" style="width:120px">
+          <button class="btn sm danger" data-cmdel="${r.key}">×</button>
         </div>`
       )
       .join("");
@@ -2261,6 +2341,13 @@
       ${codesHTML}
       <div class="section-title" style="margin:8px 0"><h2 style="font-size:15px">معايير الفلوس</h2></div>
       ${rulesHTML}
+      <div class="section-title" style="margin:12px 0 6px"><h2 style="font-size:14px">معايير مخصّصة</h2><span class="hint">تُطبَّق يدويًا من زر «الميزانية»</span></div>
+      <div id="custom-rules">${customRulesHTML}</div>
+      <div class="row" style="gap:8px;margin-top:8px">
+        <input id="new-cm-label" placeholder="معيار جديد (مثال: غرامة تأخير)" style="flex:1">
+        <input id="new-cm-amt" type="number" step="100000" placeholder="المبلغ (سالب = خصم)" style="width:150px">
+        <button class="btn sm" id="add-cm">＋</button>
+      </div>
       <div class="section-title" style="margin:14px 0 8px"><h2 style="font-size:15px">معايير التقييم (الطاقة)</h2><span class="hint">نقاط كل حدث</span></div>
       ${ratingRulesHTML}
       <div class="section-title" style="margin:14px 0 8px"><h2 style="font-size:15px">مهارات وصفية</h2><span class="hint">اختيارية</span></div>
@@ -2286,6 +2373,19 @@
           close();
           openSettings();
         };
+        $("#add-cm", root).onclick = () => {
+          const res = App.addCustomMoneyRule($("#new-cm-label", root).value, $("#new-cm-amt", root).value);
+          if (!res.ok) return toast(res.msg, "err");
+          close();
+          openSettings();
+        };
+        root.querySelectorAll("[data-cmdel]").forEach((b) => {
+          b.onclick = () => {
+            App.removeCustomMoneyRule(b.getAttribute("data-cmdel"));
+            close();
+            openSettings();
+          };
+        });
         root.querySelectorAll("[data-statdel]").forEach((b) => {
           b.onclick = () => {
             const key = b.getAttribute("data-statdel");
@@ -2313,6 +2413,12 @@
           });
           root.querySelectorAll("[data-rule]").forEach((inp) => {
             App.state.moneyRules[inp.getAttribute("data-rule")] = parseInt(inp.value, 10) || 0;
+          });
+          root.querySelectorAll("[data-cmlabel]").forEach((inp) => {
+            App.updateCustomMoneyRule(inp.getAttribute("data-cmlabel"), { label: inp.value });
+          });
+          root.querySelectorAll("[data-cmamt]").forEach((inp) => {
+            App.updateCustomMoneyRule(inp.getAttribute("data-cmamt"), { amount: parseInt(inp.value, 10) || 0 });
           });
           root.querySelectorAll("[data-rrule]").forEach((inp) => {
             App.state.ratingRules[inp.getAttribute("data-rrule")] = parseInt(inp.value, 10) || 0;
