@@ -186,6 +186,7 @@
       ledger: [],
       ratingLog: [],
       market: { active: false, week: 1, lots: [] },
+      marketHistory: [], // أرشيف الأسواق المغلقة مع صفقاتها
     };
   }
   App.defaultState = defaultState;
@@ -270,6 +271,7 @@
     if (typeof s.market.currentIndex !== "number") s.market.currentIndex = 0;
     // سوق نشط بلا لاعبين لا معنى له — نعتبره مغلقًا حتى لا تظهر صفحة فارغة
     if (s.market.active && !s.market.lots.length) s.market.active = false;
+    s.marketHistory = Array.isArray(s.marketHistory) ? s.marketHistory : [];
     return s;
   }
   function saveLocal() {
@@ -687,9 +689,13 @@
 
   // تُنزّل اللاعبين في السوق دون بدء المزاد (مرحلة تحضير). البدء بزر "ابدأ السوق".
   function openMarket(playerIds) {
+    // أرشف السوق السابق (إن كان فيه صفقات ولم يُؤرشَف) قبل استبداله
+    archiveMarket(App.state.market);
     App.state.market = {
+      id: uid(),
       active: true,
       started: false,   // لم يبدأ المزاد بعد (مرحلة التحضير)
+      archived: false,
       week: App.state.club.week,
       // currentIndex: اللاعب المعروض حاليًا. يُكشف واحدًا تلو الآخر —
       // اللاعبون بعده مخفيون حتى يُرسى على الحالي فينتقل للتالي.
@@ -855,11 +861,69 @@
     return i === -1 ? mk.lots.length : i;
   };
 
+  // أرشفة سوق مغلق: يبني لقطة بأسماء اللاعبين والفرق والأسعار وقت الإغلاق.
+  // يؤرشف مرة واحدة فقط (mk.archived) وفقط إن وُجدت صفقة مُرساة.
+  function archiveMarket(mk) {
+    if (!mk || mk.archived || !Array.isArray(mk.lots)) return;
+    const resolved = mk.lots.filter((l) => l.status === "sold" || l.status === "unsold");
+    if (!resolved.length) return;
+    const deals = mk.lots
+      .filter((l) => l.status === "sold")
+      .map((l) => {
+        const p = App.getPlayer(l.playerId);
+        const t = App.getTeam(l.winnerTeamId);
+        return {
+          playerId: l.playerId,
+          playerName: p ? p.name : "لاعب محذوف",
+          teamId: l.winnerTeamId,
+          teamName: t ? t.name : "",
+          teamColor: t ? t.color : "#888",
+          price: l.finalPrice,
+        };
+      })
+      .sort((a, b) => b.price - a.price);
+    mk.archived = true;
+    App.state.marketHistory.push({
+      id: mk.id || uid(),
+      week: mk.week,
+      closedAt: new Date().toISOString(),
+      deals,
+      unsoldCount: mk.lots.filter((l) => l.status === "unsold").length,
+    });
+  }
+  App.archiveMarket = archiveMarket;
+
   function closeMarket() {
+    archiveMarket(App.state.market);
     App.state.market.active = false;
     save();
   }
   App.closeMarket = closeMarket;
+
+  // صفقات أسبوع معيّن (من السوق الحالي + الأرشيف)، مرتّبة بالأعلى سعرًا.
+  App.weekDeals = function (week) {
+    const out = [];
+    const mk = App.state.market;
+    // السوق الحالي يُحتسب فقط إن لم يُؤرشَف بعد (وإلا ازدواج مع الأرشيف)
+    if (mk && !mk.archived && mk.week === week && Array.isArray(mk.lots)) {
+      mk.lots.filter((l) => l.status === "sold").forEach((l) => {
+        const p = App.getPlayer(l.playerId);
+        const t = App.getTeam(l.winnerTeamId);
+        out.push({
+          playerId: l.playerId,
+          playerName: p ? p.name : "لاعب محذوف",
+          teamId: l.winnerTeamId,
+          teamName: t ? t.name : "",
+          teamColor: t ? t.color : "#888",
+          price: l.finalPrice,
+        });
+      });
+    }
+    (App.state.marketHistory || []).forEach((h) => {
+      if (h.week === week) h.deals.forEach((d) => out.push(d));
+    });
+    return out.sort((a, b) => b.price - a.price);
+  };
 
   /* ---------- الأسبوع ---------- */
   function advanceWeek() {
