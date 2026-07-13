@@ -217,6 +217,15 @@ tr:last-child td { border-bottom: none; }
 .badge.sold { background: #3a2a13; color: var(--gold); }
 .badge.unsold { background: #2a2f3a; color: var(--muted); }
 
+/* عدّاد المزاد التنازلي */
+.auction-countdown {
+  display: inline-block; min-width: 44px; text-align: center;
+  padding: 2px 10px; border-radius: 999px; font-weight: 800; font-variant-numeric: tabular-nums;
+  background: #12233a; color: #7cc4ff;
+}
+.js-auction-countdown.urgent { background: #3a1616; color: #ff8a8a; animation: pulse-urgent 1s ease-in-out infinite; }
+@keyframes pulse-urgent { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
+
 /* ---------- النافذة المنبثقة ---------- */
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 60;
