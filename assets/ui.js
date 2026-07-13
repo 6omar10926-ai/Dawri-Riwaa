@@ -533,6 +533,44 @@
       <div class="grid">${list}</div>`;
   }
 
+  // عدّاد تنازلي (يُحدّثه المؤقّت مباشرة عبر الصنف js-auction-countdown)
+  function countdownChip(mk) {
+    if (typeof mk.endsAt !== "number") return "";
+    const secs = Math.max(0, Math.ceil((mk.endsAt - Date.now()) / 1000));
+    return `<span class="auction-countdown js-auction-countdown${secs <= 10 ? " urgent" : ""}">${secs}ث</span>`;
+  }
+
+  // شريط أنصبة الفرق (كم اشترى كل فريق من أصل الحد)
+  function capChips(mk) {
+    const cap = App.marketMaxPerTeam(mk);
+    return `<div class="row wrap" style="gap:6px;margin:4px 0 2px">
+      ${App.state.teams.map((t) => {
+        const n = App.marketTeamPurchases(t.id, mk);
+        const full = n >= cap;
+        return `<span class="chip${full ? " muted" : ""}"><span style="width:9px;height:9px;border-radius:3px;background:${t.color};display:inline-block"></span> ${esc(t.name)} ${n}/${cap}${full ? " ✓" : ""}</span>`;
+      }).join("")}
+    </div>`;
+  }
+
+  // مرحلة التحضير: نُزّل اللاعبون ولم يبدأ المزاد
+  function viewMarketStaging(mk) {
+    const cards = mk.lots.map((lot) => {
+      const p = App.getPlayer(lot.playerId);
+      return p ? `<div class="card">${playerCardHTML(p)}</div>` : "";
+    }).join("");
+    const startBtn = isAdmin()
+      ? `<button class="btn gold" data-action="start-market">▶️ ابدأ السوق</button>
+         <button class="btn" data-action="open-market-manual">✋ تعديل اللاعبين</button>
+         <button class="btn sm danger" data-action="close-market">إلغاء</button>`
+      : `<span class="hint">بانتظار أن يبدأ المشرف المزاد…</span>`;
+    return `<div class="section-title"><h2>سوق الانتقالات</h2><span class="hint">تحضير — ${mk.lots.length} لاعب</span></div>
+      <div class="card">
+        <p class="muted" style="margin-top:0">اللاعبون جاهزون للمزاد. لكل لاعب ${App.AUCTION_DURATION_MS / 1000} ثانية، وأي مزايدة في آخر ${App.AUCTION_EXTEND_WINDOW_MS / 1000} ثوانٍ تُمدّد الوقت ${App.AUCTION_EXTEND_MS / 1000} ثوانٍ. حد الشراء ${App.marketMaxPerTeam(mk)} لاعبين لكل فريق.</p>
+        <div class="row wrap">${startBtn}</div>
+      </div>
+      <div class="grid cols-2">${cards}</div>`;
+  }
+
   function viewMarket() {
     const mk = App.state.market;
     if (!mk.active) {
@@ -542,14 +580,17 @@
       const freeCount = App.freeAgents().length;
       return `<div class="section-title"><h2>سوق الانتقالات</h2><span class="hint">مزاد نهاية الأسبوع</span></div>
         <div class="card">
-          <p class="muted" style="margin-top:0">افتح المزاد باختيار لاعبين أحرار عشوائيًا، أو اختر يدويًا أي لاعب (حتى من الفرق) لعرضه للبيع. عند بيع لاعب من فريق تُضاف قيمته لفريقه السابق.</p>
+          <p class="muted" style="margin-top:0">نزّل اللاعبين للسوق (عشوائيًا من الأحرار أو يدويًا حتى من الفرق) ثم اضغط «ابدأ السوق». عند بيع لاعب من فريق تُضاف قيمته لفريقه السابق.</p>
           <div class="row wrap">
-            <button class="btn primary" data-action="open-market-random" ${freeCount ? "" : "disabled"}>🎲 اختيار 8 أحرار عشوائي</button>
+            <button class="btn primary" data-action="open-market-random" ${freeCount ? "" : "disabled"}>🎲 تنزيل 6 أحرار عشوائي</button>
             <button class="btn" data-action="open-market-manual">✋ اختيار يدوي</button>
           </div>
           <p class="small muted">اللاعبون الأحرار المتاحون: ${freeCount} • إجمالي اللاعبين: ${App.state.players.length}</p>
         </div>`;
     }
+
+    // نُزّل اللاعبون ولم يبدأ المزاد بعد → مرحلة التحضير
+    if (!mk.started) return viewMarketStaging(mk);
 
     const myTeam = isPresident() ? App.getTeam(myTeamId()) : null;
     // كشف اللاعبين واحدًا تلو الآخر: نعرض حتى اللاعب الحالي فقط، والباقي مخفي
@@ -567,7 +608,7 @@
             ? `<span class="badge sold">بيع لـ ${esc(App.getTeam(lot.winnerTeamId)?.name || "")} بـ ${fmtShort(lot.finalPrice)}</span>`
             : lot.status === "unsold"
             ? `<span class="badge unsold">لم يُبع</span>`
-            : `<span class="badge open">مفتوح</span>`;
+            : `<span class="badge open">جارٍ الآن</span> ${countdownChip(mk)}`;
         // عناصر المزايدة: المشرف يرى الكل، رئيس النادي يزايد بفريقه فقط، العام لا يزايد
         const minBid = App.marketMinBid(lot);
         const bidHint = `<div class="small muted" style="width:100%">أقل مزايدة ${fmtMoney(minBid)} • من مضاعفات ${fmtMoney(App.MARKET_BID_STEP)}</div>`;
@@ -581,7 +622,9 @@
                ${bidHint}
              </div>`;
         } else if (lot.status === "open" && isPresident() && myTeam) {
-          bidControls = `<div class="row wrap" style="margin-top:12px;gap:8px">
+          bidControls = App.marketTeamAtCap(myTeam.id, mk)
+            ? `<div class="small muted" style="margin-top:12px">✓ استنفدت نصيبك (${App.marketMaxPerTeam(mk)} لاعبين) في هذه الجولة.</div>`
+            : `<div class="row wrap" style="margin-top:12px;gap:8px">
                <input type="hidden" data-bid-team="${lot.id}" value="${myTeam.id}">
                <span class="chip"><span style="width:10px;height:10px;border-radius:3px;background:${myTeam.color};display:inline-block"></span> ميزانيتك: ${fmtMoney(myTeam.budget)}</span>
                <input type="number" data-bid-amount="${lot.id}" value="${minBid}" min="${minBid}" step="${App.MARKET_BID_STEP}" style="width:150px">
@@ -613,6 +656,7 @@
         ${isAdmin() ? `<button class="btn sm gold" data-action="auction-screen">🖥️ اعرض على الشاشة</button>` : ""}
         ${isAdmin() ? `<button class="btn sm danger" data-action="close-market">إغلاق السوق</button>` : ""}
       </div>
+      ${capChips(mk)}
       <div class="grid cols-2">${lots}</div>
       ${hiddenHint}`;
   }
@@ -625,6 +669,16 @@
       return `<div class="auction-screen">
         <div class="auction-empty"><div class="big">💰</div>لا يوجد مزاد جارٍ حاليًا.</div>
         <div class="auction-bar">${backBtn}</div>
+      </div>`;
+    }
+    // نُزّل اللاعبون ولم يبدأ المزاد بعد
+    if (!mk.started) {
+      return `<div class="auction-screen">
+        <div class="auction-empty"><div class="big">⏳</div>${mk.lots.length} لاعب جاهز — لم يبدأ المزاد بعد.</div>
+        <div class="auction-bar">
+          ${isAdmin() ? `<button class="btn gold" data-action="start-market">▶️ ابدأ السوق</button>` : ""}
+          ${backBtn}
+        </div>
       </div>`;
     }
     const total = mk.lots.length;
@@ -688,6 +742,7 @@
       <div class="auction-top">
         <span class="chip">لاعب ${Math.min(idx + 1, total)} من ${total}</span>
         <span class="chip">أُرسي على ${resolved}</span>
+        <span class="chip">⏱ <span class="js-auction-countdown${typeof mk.endsAt === "number" && mk.endsAt - Date.now() <= 10000 ? " urgent" : ""}">${typeof mk.endsAt === "number" ? Math.max(0, Math.ceil((mk.endsAt - Date.now()) / 1000)) + "ث" : "—"}</span></span>
       </div>
       <div class="auction-main">
         <div class="auction-player">
@@ -1259,7 +1314,7 @@
     "settings", "advance-week", "new-match", "edit-match", "del-match", "live-match", "live-fixture", "awards",
     "add-player", "add-player-to", "edit-player", "eval-player", "del-player",
     "edit-team", "open-market-random", "open-market-manual", "finalize-lot",
-    "close-market", "auction-screen", "export", "import",
+    "start-market", "close-market", "auction-screen", "export", "import",
     "add-fixture", "edit-fixture", "del-fixture", "fixture-done",
   ]);
 
@@ -1320,14 +1375,16 @@
         }, true);
       case "edit-team": return openTeamForm(App.getTeam(id));
       case "open-market-random": {
-        const ids = App.pickRandomForMarket(8);
+        const ids = App.pickRandomForMarket(6);
         if (!ids.length) return toast("لا يوجد لاعبون أحرار", "err");
-        App.openMarket(ids); toast("فُتح السوق بـ " + ids.length + " لاعب", "ok"); return render();
+        App.openMarket(ids); toast("نُزّل " + ids.length + " لاعب — اضغط ابدأ السوق", "ok"); return render();
       }
       case "open-market-manual": return openMarketManual();
+      case "start-market":
+        return confirmBox("بدء المزاد؟ سيبدأ مؤقّت أول لاعب فورًا.", () => { App.startMarket(); toast("بدأ السوق ▶️", "ok"); render(); });
       case "place-bid": return doBid(id);
       case "finalize-lot":
-        return confirmBox("إرساء المزاد على أعلى مزايد؟", () => { App.finalizeLot(id); toast("تم الإرساء", "ok"); render(); });
+        return confirmBox("إرساء المزاد على أعلى مزايد الآن؟", () => { App.finalizeLot(id); toast("تم الإرساء", "ok"); render(); });
       case "close-market":
         return confirmBox("إغلاق السوق؟ اللاعبون غير المُباعين يبقون أحرارًا.", () => { App.closeMarket(); toast("أُغلق السوق"); go("dashboard"); });
       case "export": return doExport();
@@ -2307,9 +2364,30 @@
     inp.click();
   }
 
+  /* ---------- مؤقّت المزاد ----------
+     كل نصف ثانية: يحدّث العدّاد التنازلي المعروض مباشرةً (بدون إعادة رسم كاملة)،
+     وعند انتهاء وقت اللاعب يُرسي المشرف تلقائيًا على أعلى مزايد وينتقل للتالي.
+     الإرساء التلقائي من حساب المشرف فقط (سلطة واحدة) تفاديًا لإرساء مزدوج. */
+  function marketTick() {
+    const mk = App.state.market;
+    const els = document.querySelectorAll(".js-auction-countdown");
+    const running = mk && mk.active && mk.started && typeof mk.endsAt === "number";
+    if (!running) {
+      els.forEach((el) => { el.textContent = "—"; el.classList.remove("urgent"); });
+      return;
+    }
+    const remaining = Math.max(0, mk.endsAt - Date.now());
+    const secs = Math.ceil(remaining / 1000);
+    els.forEach((el) => { el.textContent = secs + "ث"; el.classList.toggle("urgent", secs <= 10); });
+    if (remaining <= 0 && isAdmin()) {
+      if (App.expireCurrentLot()) render(); // تقدّم لللاعب التالي أو أنهى المزاد
+    }
+  }
+
   /* ---------- الإقلاع ---------- */
   const initRoute = (location.hash || "").replace("#", "");
   if (VIEWS[initRoute]) route = initRoute;
   document.addEventListener("DOMContentLoaded", render);
   if (document.readyState !== "loading") render();
+  setInterval(marketTick, 500);
 })();

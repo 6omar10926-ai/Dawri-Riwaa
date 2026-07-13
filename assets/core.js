@@ -261,6 +261,11 @@
       if (typeof lot.finalPrice !== "number") lot.finalPrice = 0;
       if (lot.winnerTeamId === undefined) lot.winnerTeamId = null;
     });
+    // حقول المزاد بالمؤقّت: سوق نشط قديم بلا started يُعتبر بدأ (إرساء يدوي يعمل)
+    if (typeof s.market.started !== "boolean") s.market.started = !!s.market.active;
+    if (typeof s.market.maxPerTeam !== "number") s.market.maxPerTeam = App.MARKET_MAX_PER_TEAM;
+    if (typeof s.market.endsAt !== "number") s.market.endsAt = null;
+    if (typeof s.market.currentIndex !== "number") s.market.currentIndex = 0;
     // سوق نشط بلا لاعبين لا معنى له — نعتبره مغلقًا حتى لا تظهر صفحة فارغة
     if (s.market.active && !s.market.lots.length) s.market.active = false;
     return s;
@@ -641,13 +646,23 @@
   App.grantAward = grantAward;
 
   /* ---------- سوق الانتقالات (المزاد) ---------- */
+  // إعدادات المزاد بالمؤقّت
+  App.AUCTION_DURATION_MS = 45_000;      // مدة المزاد لكل لاعب
+  App.AUCTION_EXTEND_WINDOW_MS = 10_000; // آخر نافذة زمنية يُفعّل فيها التمديد
+  App.AUCTION_EXTEND_MS = 5_000;         // مقدار التمديد عند مزايدة في آخر النافذة
+  App.MARKET_MAX_PER_TEAM = 2;           // أقصى عدد لاعبين يشتريها الفريق في الجولة
+
+  // تُنزّل اللاعبين في السوق دون بدء المزاد (مرحلة تحضير). البدء بزر "ابدأ السوق".
   function openMarket(playerIds) {
     App.state.market = {
       active: true,
+      started: false,   // لم يبدأ المزاد بعد (مرحلة التحضير)
       week: App.state.club.week,
       // currentIndex: اللاعب المعروض حاليًا. يُكشف واحدًا تلو الآخر —
       // اللاعبون بعده مخفيون حتى يُرسى على الحالي فينتقل للتالي.
       currentIndex: 0,
+      endsAt: null,     // وقت انتهاء مؤقّت اللاعب الحالي (ms) — يُضبط عند البدء
+      maxPerTeam: App.MARKET_MAX_PER_TEAM,
       lots: playerIds.map((pid) => ({
         id: uid(),
         playerId: pid,
@@ -660,6 +675,51 @@
     save();
   }
   App.openMarket = openMarket;
+
+  // كم لاعبًا اشترى الفريق في هذه الجولة (لتطبيق الحد الأقصى)
+  App.marketTeamPurchases = function (teamId, mk) {
+    mk = mk || App.state.market;
+    if (!mk || !Array.isArray(mk.lots)) return 0;
+    return mk.lots.filter((l) => l.status === "sold" && l.winnerTeamId === teamId).length;
+  };
+  App.marketMaxPerTeam = function (mk) {
+    mk = mk || App.state.market;
+    return typeof (mk && mk.maxPerTeam) === "number" ? mk.maxPerTeam : App.MARKET_MAX_PER_TEAM;
+  };
+  App.marketTeamAtCap = function (teamId, mk) {
+    mk = mk || App.state.market;
+    return App.marketTeamPurchases(teamId, mk) >= App.marketMaxPerTeam(mk);
+  };
+
+  // يضبط وقت انتهاء مؤقّت اللاعب الحالي (أو يُفرغه لو انتهى السوق)
+  function armLotTimer() {
+    const mk = App.state.market;
+    const lot = mk.lots[mk.currentIndex];
+    mk.endsAt = lot && lot.status === "open" ? Date.now() + App.AUCTION_DURATION_MS : null;
+  }
+
+  // بدء المزاد: يذهب لأول لاعب مفتوح ويشغّل مؤقّته
+  function startMarket() {
+    const mk = App.state.market;
+    if (!mk || !mk.active || mk.started) return;
+    mk.started = true;
+    const i = mk.lots.findIndex((l) => l.status === "open");
+    mk.currentIndex = i === -1 ? mk.lots.length : i;
+    armLotTimer();
+    save();
+  }
+  App.startMarket = startMarket;
+
+  // يُرسي اللاعب الحالي إذا انتهى وقته (يستدعيه المؤقّت في الواجهة — المشرف فقط)
+  App.expireCurrentLot = function () {
+    const mk = App.state.market;
+    if (!mk || !mk.active || !mk.started || typeof mk.endsAt !== "number") return false;
+    if (Date.now() < mk.endsAt) return false;
+    const lot = mk.lots[mk.currentIndex];
+    if (!lot || lot.status !== "open") { mk.endsAt = null; save(); return false; }
+    finalizeLot(lot.id); // يُرسي ويتقدّم ويعيد ضبط المؤقّت ويحفظ
+    return true;
+  };
 
   function pickRandomForMarket(count) {
     const pool = App.freeAgents();
@@ -679,10 +739,19 @@
   };
 
   function placeBid(lotId, teamId, amount) {
-    const lot = App.state.market.lots.find((l) => l.id === lotId);
+    const mk = App.state.market;
+    if (!mk.started) return { ok: false, msg: "لم يبدأ السوق بعد" };
+    const lot = mk.lots.find((l) => l.id === lotId);
     if (!lot || lot.status !== "open") return { ok: false, msg: "المزايدة مغلقة" };
+    // المزايدة على اللاعب المعروض حاليًا فقط
+    const current = mk.lots[mk.currentIndex];
+    if (current && current.id !== lot.id)
+      return { ok: false, msg: "هذا ليس اللاعب المعروض حاليًا" };
     const team = App.getTeam(teamId);
     if (!team) return { ok: false, msg: "فريق غير موجود" };
+    // حد الفريق: لا يشتري أكثر من العدد المسموح في الجولة
+    if (App.marketTeamAtCap(teamId, mk))
+      return { ok: false, msg: "الفريق استنفد نصيبه (" + App.marketMaxPerTeam(mk) + " لاعبين) في هذه الجولة" };
     const step = App.MARKET_BID_STEP;
     const minAllowed = App.marketMinBid(lot);
     if (amount % step !== 0)
@@ -692,6 +761,12 @@
     if (amount > team.budget)
       return { ok: false, msg: "ميزانية الفريق لا تكفي (" + fmtMoney(team.budget) + ")" };
     lot.bids.push({ teamId, amount, at: new Date().toISOString() });
+    // مانع القنص: مزايدة في آخر نافذة زمنية تمدّد الوقت 5 ثوانٍ
+    if (typeof mk.endsAt === "number") {
+      const remaining = mk.endsAt - Date.now();
+      if (remaining > 0 && remaining <= App.AUCTION_EXTEND_WINDOW_MS)
+        mk.endsAt += App.AUCTION_EXTEND_MS;
+    }
     save();
     return { ok: true };
   }
@@ -712,30 +787,29 @@
     if (!lot || lot.status !== "open") return;
     if (!lot.bids.length) {
       lot.status = "unsold";
-      advanceMarket(idx);
-      save();
-      return;
-    }
-    const top = lot.bids[lot.bids.length - 1];
-    const player = App.getPlayer(lot.playerId);
-    const prevTeamId = player ? player.teamId : null; // فريقه قبل البيع (قد يكون حرًّا = null)
-    lot.status = "sold";
-    lot.winnerTeamId = top.teamId;
-    lot.finalPrice = top.amount;
-    // خصم الثمن من المشتري
-    addTransaction(top.teamId, -top.amount, "شراء لاعب: " + (player ? player.name : ""), {
-      refType: "transfer",
-      refId: lot.id,
-    });
-    // إن كان اللاعب مملوكًا لفريق (ليس حرًّا) تُضاف قيمة البيع لفريقه السابق
-    if (prevTeamId) {
-      addTransaction(prevTeamId, top.amount, "بيع لاعب: " + (player ? player.name : ""), {
+    } else {
+      const top = lot.bids[lot.bids.length - 1];
+      const player = App.getPlayer(lot.playerId);
+      const prevTeamId = player ? player.teamId : null; // فريقه قبل البيع (قد يكون حرًّا = null)
+      lot.status = "sold";
+      lot.winnerTeamId = top.teamId;
+      lot.finalPrice = top.amount;
+      // خصم الثمن من المشتري
+      addTransaction(top.teamId, -top.amount, "شراء لاعب: " + (player ? player.name : ""), {
         refType: "transfer",
         refId: lot.id,
       });
+      // إن كان اللاعب مملوكًا لفريق (ليس حرًّا) تُضاف قيمة البيع لفريقه السابق
+      if (prevTeamId) {
+        addTransaction(prevTeamId, top.amount, "بيع لاعب: " + (player ? player.name : ""), {
+          refType: "transfer",
+          refId: lot.id,
+        });
+      }
+      if (player) player.teamId = top.teamId;
     }
-    if (player) player.teamId = top.teamId;
     advanceMarket(idx);
+    if (mk.started) armLotTimer(); // ابدأ مؤقّت اللاعب التالي (أو أفرغه لو انتهى السوق)
     save();
   }
   App.finalizeLot = finalizeLot;
