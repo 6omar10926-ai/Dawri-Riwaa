@@ -849,22 +849,15 @@
     } else {
       const top = lot.bids[lot.bids.length - 1];
       const player = App.getPlayer(lot.playerId);
-      const prevTeamId = player ? player.teamId : null; // فريقه قبل البيع (قد يكون حرًّا = null)
       lot.status = "sold";
       lot.winnerTeamId = top.teamId;
       lot.finalPrice = top.amount;
-      // خصم الثمن من المشتري
+      // خصم الثمن من المشتري فقط — القيمة "تختفي" ولا تُضاف لأي فريق (حتى لو كان
+      // اللاعب مملوكًا لفريق آخر، فريقه السابق لا يحصل على شيء).
       addTransaction(top.teamId, -top.amount, "شراء لاعب: " + (player ? player.name : ""), {
         refType: "transfer",
         refId: lot.id,
       });
-      // إن كان اللاعب مملوكًا لفريق (ليس حرًّا) تُضاف قيمة البيع لفريقه السابق
-      if (prevTeamId) {
-        addTransaction(prevTeamId, top.amount, "بيع لاعب: " + (player ? player.name : ""), {
-          refType: "transfer",
-          refId: lot.id,
-        });
-      }
       if (player) player.teamId = top.teamId;
     }
     advanceMarket(idx);
