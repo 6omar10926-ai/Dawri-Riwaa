@@ -296,14 +296,30 @@
     </div></nav>`;
   }
 
+  // قائمة الأسابيع المتاحة للتنقّل (1..الأسبوع الحالي + أي أسبوع فيه مباريات/مواعيد)
+  function weekOptionsList() {
+    const c = App.state.club;
+    const weeks = new Set();
+    for (let w = 1; w <= (c.week || 1); w++) weeks.add(w);
+    App.state.matches.forEach((m) => m.week && weeks.add(m.week));
+    App.state.fixtures.forEach((f) => f.week && weeks.add(f.week));
+    return [...weeks].filter(Boolean).sort((a, b) => a - b);
+  }
+
   function renderTopbar() {
     const c = App.state.club;
+    // المشرف: قائمة منسدلة للتنقّل بين الأسابيع. غيره: عرض ثابت للأسبوع الحالي.
+    const weekControl = isAdmin()
+      ? `<label class="week-pill week-select" title="تنقّل بين الأسابيع">الأسبوع
+          <select id="week-select">${weekOptionsList().map((w) => `<option value="${w}" ${w === c.week ? "selected" : ""}>${w}</option>`).join("")}</select>
+        </label>`
+      : `<div class="week-pill">الأسبوع <b>${c.week}</b></div>`;
     return `<header class="topbar"><div class="inner">
       <img class="brand-logo" src="assets/logo.png" alt="${esc(c.name)}">
       <span class="role-pill">${esc(roleName())}</span>
       <div class="spacer"></div>
       <span class="week-pill" id="cloud-status" title="حالة المزامنة السحابية">…</span>
-      <div class="week-pill">الأسبوع <b>${c.week}</b></div>
+      ${weekControl}
       ${isAdmin() ? `<button class="btn sm ghost" data-action="settings" title="الإعدادات">⚙️</button>` : ""}
       <button class="btn sm ghost" data-action="logout" title="تسجيل الخروج">🚪</button>
     </div></header>`;
@@ -512,8 +528,11 @@
       ${body}`;
   }
 
+  let matchesAllWeeks = false; // عرض كل الأسابيع أو أحداث الأسبوع الحالي فقط
   function viewMatches() {
-    const matches = App.state.matches.slice().reverse();
+    const cw = App.state.club.week;
+    let matches = App.state.matches.slice().reverse();
+    if (!matchesAllWeeks) matches = matches.filter((m) => m.week === cw);
     const list = matches.length
       ? matches
           .map((m) => {
@@ -541,10 +560,12 @@
             </div>`;
           })
           .join("")
-      : `<div class="empty"><div class="big">⚽</div>لا توجد مباريات مسجّلة.</div>`;
+      : `<div class="empty"><div class="big">⚽</div>${matchesAllWeeks ? "لا توجد مباريات مسجّلة." : "لا توجد مباريات في الأسبوع " + cw + "."}</div>`;
 
     return `<div class="section-title"><h2>النتائج</h2>
+        <span class="hint">${matchesAllWeeks ? "كل الأسابيع" : "الأسبوع " + cw}</span>
         <div class="spacer"></div>
+        <button class="btn sm ${matchesAllWeeks ? "gold" : "ghost"}" data-action="toggle-matches-weeks">${matchesAllWeeks ? "أسبوع " + cw + " فقط" : "🗂️ كل الأسابيع"}</button>
         ${isAdmin() ? `<button class="btn sm gold" data-action="live-match">🎬 تسجيل مباشر</button>` : ""}
         ${isAdmin() ? `<button class="btn primary sm" data-action="new-match">＋ تسجيل مباراة</button>` : ""}
       </div>
@@ -1326,6 +1347,13 @@
     document.querySelectorAll("[data-action]").forEach((b) => {
       b.onclick = () => handleAction(b.getAttribute("data-action"), b.getAttribute("data-id"));
     });
+    // التنقّل بين الأسابيع من الشريط العلوي (للمشرف)
+    const ws = document.getElementById("week-select");
+    if (ws) ws.onchange = () => {
+      App.state.club.week = parseInt(ws.value, 10) || App.state.club.week;
+      App.save();
+      render();
+    };
   }
 
   // أفعال يقتصر تنفيذها على المشرف
@@ -1375,6 +1403,7 @@
       }
       case "del-match":
         return confirmBox("حذف المباراة وإرجاع فلوسها وتقييماتها؟", () => { App.deleteMatch(id); toast("حُذفت المباراة"); render(); }, true);
+      case "toggle-matches-weeks": matchesAllWeeks = !matchesAllWeeks; return render();
       case "go-market": return go("market");
       case "auction-screen": return go("auction");
       case "awards": return openAwards();

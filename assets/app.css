@@ -72,6 +72,12 @@ header.topbar {
   padding: 6px 12px; border-radius: 999px; font-size: 13px; color: var(--muted);
 }
 .week-pill b { color: var(--gold); }
+.week-pill.week-select { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.week-pill.week-select select {
+  background: transparent; border: none; color: var(--gold); font-weight: 800;
+  font-size: 14px; cursor: pointer; padding: 0 2px; outline: none;
+}
+.week-pill.week-select select option { background: var(--card-2); color: var(--text); }
 
 /* ---------- التنقّل ---------- */
 nav.tabs {
