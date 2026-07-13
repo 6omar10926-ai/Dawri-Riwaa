@@ -303,9 +303,33 @@
   App.teamPlayers = (teamId) => App.state.players.filter((p) => p.teamId === teamId);
   App.freeAgents = () => App.state.players.filter((p) => !p.teamId);
 
-  // تقييم اللاعب = طاقته (يبدأ من 50، سقف 99). هذا الرقم الكبير على البطاقة.
-  App.playerOverall = (p) =>
-    typeof p.rating === "number" ? p.rating : App.RATING_START;
+  // طاقة اللاعب في أسبوع معيّن: تبدأ كل أسبوع من 50 وتتغيّر بمجموع تقييمات
+  // ذلك الأسبوع فقط (مشتقّة من ratingLog حسب الأسبوع، لا رقم تراكمي واحد).
+  App.playerWeekRating = function (playerId, week) {
+    const sum = App.state.ratingLog
+      .filter((l) => l.playerId === playerId && l.week === week)
+      .reduce((s, l) => s + (l.delta || 0), 0);
+    return clamp(App.RATING_START + sum, App.RATING_MIN, App.RATING_MAX);
+  };
+
+  // تقييم اللاعب (الرقم الكبير على البطاقة) = طاقته في الأسبوع الحالي.
+  App.playerOverall = (p) => App.playerWeekRating(p.id, App.state.club.week);
+
+  // الأسابيع التي فيها نشاط تقييمي للاعب (مرتّبة تصاعديًا)
+  App.playerActiveWeeks = function (playerId) {
+    const weeks = new Set();
+    App.state.ratingLog.forEach((l) => { if (l.playerId === playerId) weeks.add(l.week); });
+    return [...weeks].sort((a, b) => a - b);
+  };
+
+  // إحصائيات اللاعب في أسبوع (تجميع تفاصيل التقييمات): { ruleKey: count }
+  App.playerWeekStats = function (playerId, week) {
+    const agg = {};
+    App.state.ratingLog
+      .filter((l) => l.playerId === playerId && l.week === week)
+      .forEach((l) => (l.breakdown || []).forEach((b) => { agg[b.key] = (agg[b.key] || 0) + (b.count || 0); }));
+    return agg;
+  };
 
   // متوسط المهارات الوصفية الاختيارية (لا يؤثر على التقييم)
   App.playerAttrAvg = (p) => {
@@ -340,22 +364,23 @@
       breakdown.push({ key: rule.key, label: rule.label, count: c, pts, subtotal });
     });
     if (!breakdown.length) return null;
-    const oldRating = App.playerOverall(p);
-    const newRating = clamp(oldRating + delta, App.RATING_MIN, App.RATING_MAX);
-    p.rating = newRating;
+    const week = (opts && opts.week) || App.state.club.week;
+    const oldRating = App.playerWeekRating(playerId, week); // طاقته في ذلك الأسبوع قبل الإضافة
     App.state.ratingLog.push({
       id: uid(),
       playerId,
-      week: (opts && opts.week) || App.state.club.week,
+      week,
       date: new Date().toISOString(),
       delta,
-      applied: newRating - oldRating, // الفرق الفعلي بعد السقف
-      oldRating,
-      newRating,
       breakdown,
       note: note || "",
       matchId: (opts && opts.matchId) || null,
     });
+    const newRating = App.playerWeekRating(playerId, week); // بعده (يشمل السطر الجديد)
+    const last = App.state.ratingLog[App.state.ratingLog.length - 1];
+    last.oldRating = oldRating;
+    last.newRating = newRating;
+    last.applied = newRating - oldRating; // للعرض فقط
     return { oldRating, newRating, delta, breakdown };
   }
   App.applyRatingCounts = applyRatingCounts;
@@ -388,29 +413,23 @@
   }
   App.applyMatchRatings = applyMatchRatings;
 
-  // إلغاء تقييمات مباراة (عند حذفها): يعيد التقييم بطرح الفرق المطبّق ويحذف سجلّاتها.
+  // إلغاء تقييمات مباراة (عند حذفها): يكفي حذف سجلّاتها لأن الطاقة مشتقّة من السجل.
   function reverseMatchRatings(matchId) {
-    App.state.ratingLog
-      .filter((l) => l.matchId === matchId)
-      .forEach((l) => {
-        const p = App.getPlayer(l.playerId);
-        if (p) p.rating = clamp(App.playerOverall(p) - (l.applied || 0), App.RATING_MIN, App.RATING_MAX);
-      });
     App.state.ratingLog = App.state.ratingLog.filter((l) => l.matchId !== matchId);
   }
   App.reverseMatchRatings = reverseMatchRatings;
 
-  // تعديل يدوي مباشر للتقييم (بدون أحداث)
+  // تعديل يدوي مباشر لطاقة اللاعب في الأسبوع الحالي (يُسجَّل كفرق في ذلك الأسبوع)
   function adjustRating(playerId, newValue, note) {
     const p = App.getPlayer(playerId);
     if (!p) return;
-    const oldRating = App.playerOverall(p);
+    const week = App.state.club.week;
+    const oldRating = App.playerWeekRating(playerId, week);
     const nv = clamp(parseInt(newValue, 10) || 0, App.RATING_MIN, App.RATING_MAX);
-    p.rating = nv;
     App.state.ratingLog.push({
       id: uid(),
       playerId,
-      week: App.state.club.week,
+      week,
       date: new Date().toISOString(),
       delta: nv - oldRating,
       applied: nv - oldRating,
@@ -621,6 +640,7 @@
     if (data.awayTeamId) match.awayTeamId = data.awayTeamId;
     if (data.events) match.events = data.events;
     if (typeof data.note === "string") match.note = data.note;
+    if (data.week) match.week = parseInt(data.week, 10) || match.week;
     computeMatchMeta(match);
     applyMatchFinancials(match);
     applyMatchRatings(match);

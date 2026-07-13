@@ -1453,7 +1453,6 @@
       </div>
       <label class="field"><span>الفريق</span><select id="pl-team">${teamOptions(p.teamId, true)}</select></label>
       <div class="grid cols-2">
-        <label class="field"><span>التقييم (الطاقة)</span><input id="pl-rating" type="number" min="${App.RATING_MIN}" max="${App.RATING_MAX}" value="${p.rating != null ? p.rating : App.RATING_START}"></label>
         <label class="field"><span>صورة (اختياري)</span><input id="pl-photo" type="file" accept="image/*"></label>
       </div>
       <div id="pl-photo-wrap" style="display:none;margin-bottom:12px">
@@ -1462,7 +1461,7 @@
           <label class="row" style="gap:8px;cursor:pointer;margin:0"><input type="checkbox" id="pl-nobg" checked style="width:auto"> <span class="small">إزالة الخلفية (أفضل مع خلفية بسيطة)</span></label>
         </div>
       </div>
-      <div class="small muted" style="margin-bottom:10px">يبدأ اللاعب من ${App.RATING_START} ويتغيّر بالتقييم لاحقًا (الحد الأقصى ${App.RATING_MAX}).</div>
+      <div class="small muted" style="margin-bottom:10px">طاقة اللاعب تبدأ كل أسبوع من ${App.RATING_START} وتتغيّر بتقييمات مباريات ذلك الأسبوع (الحد الأقصى ${App.RATING_MAX}).</div>
       <details style="margin-bottom:6px"><summary class="muted small" style="cursor:pointer">مهارات وصفية اختيارية (لا تؤثر على التقييم)</summary>
       <div style="margin-top:10px">${statsInputs}</div></details>`;
     let photoData = p.photo;
@@ -1504,7 +1503,6 @@
             position: $("#pl-pos", root).value,
             number: $("#pl-num", root).value,
             teamId: $("#pl-team", root).value || null,
-            rating: clamp(parseInt($("#pl-rating", root).value, 10) || App.RATING_START, App.RATING_MIN, App.RATING_MAX),
             stats,
             photo: photoData || null,
           };
@@ -1691,6 +1689,23 @@
   }
 
   /* ---------- إحصائيات اللاعب (للعرض العام) ---------- */
+  // بطاقات "الطاقة والإحصائيات كل أسبوع" — مشتركة بين عرض الإحصائيات وتفاصيل اللاعب
+  function weeklyBreakdownHTML(playerId) {
+    const ruleLabel = {};
+    App.ratingRuleList().forEach((r) => (ruleLabel[r.key] = r.label));
+    const weeks = App.playerActiveWeeks(playerId);
+    if (!weeks.length) return `<div class="small muted">لا يوجد سجل أسبوعي بعد.</div>`;
+    return weeks.slice().reverse().map((w) => {
+      const rating = App.playerWeekRating(playerId, w);
+      const stats = App.playerWeekStats(playerId, w);
+      const chips = Object.keys(stats).map((k) => `<span class="chip">${esc(ruleLabel[k] || k)}: ${stats[k]}</span>`).join(" ");
+      return `<div class="card" style="margin-bottom:8px">
+        <div class="row between"><b>أسبوع ${w}</b><span class="mono" style="color:var(--gold);font-weight:800;font-size:18px">${rating}</span></div>
+        <div class="row wrap" style="gap:6px;margin-top:8px">${chips || '<span class="small muted">لا إحصائيات مسجّلة</span>'}</div>
+      </div>`;
+    }).join("");
+  }
+
   function openPlayerStats(playerId) {
     const p = App.getPlayer(playerId);
     if (!p) return toast("اللاعب غير موجود", "err");
@@ -1724,6 +1739,8 @@
       </div>`;
     }).join("") || `<div class="small muted">لم يلعب أي مباراة بعد.</div>`;
 
+    const weeklyHTML = weeklyBreakdownHTML(playerId);
+
     const photo = p.photo
       ? `<img class="pc-photo" src="${p.photo}" alt="" style="width:72px;height:72px">`
       : `<div class="pc-photo" style="width:72px;height:72px">👤</div>`;
@@ -1734,14 +1751,16 @@
         <div style="flex:1">
           <div style="font-size:20px;font-weight:800">${esc(p.name)}</div>
           <div class="small" style="color:${team ? team.color : "var(--muted)"}">${team ? esc(team.name) : "لاعب حر"}${p.number ? " • #" + esc(p.number) : ""}</div>
-          <div class="small muted">المركز: ${esc(p.position || "—")} • التقييم: <b style="color:var(--gold)">${App.playerOverall(p)}</b></div>
+          <div class="small muted">المركز: ${esc(p.position || "—")} • طاقة الأسبوع الحالي: <b style="color:var(--gold)">${App.playerOverall(p)}</b></div>
         </div>
       </div>
       <div class="grid cols-2" style="margin:14px 0">
         <div class="card" style="text-align:center"><div class="muted small">مباريات لعبها</div><div style="font-size:26px;font-weight:800">${totalMatches}</div></div>
         <div class="card" style="text-align:center"><div class="muted small">إجمالي الدقائق</div><div style="font-size:26px;font-weight:800">${totalMinutes} <span class="small muted">د</span></div></div>
       </div>
-      <div class="section-title" style="margin:6px 0 8px"><h2 style="font-size:15px">آخر مباراتين</h2></div>
+      <div class="section-title" style="margin:6px 0 8px"><h2 style="font-size:15px">📅 الطاقة والإحصائيات كل أسبوع</h2></div>
+      ${weeklyHTML}
+      <div class="section-title" style="margin:12px 0 8px"><h2 style="font-size:15px">آخر مباراتين</h2></div>
       ${last2}`;
 
     modal({ title: "إحصائيات " + p.name, body, foot: `<button class="btn ghost" data-close>إغلاق</button>` });
@@ -1778,6 +1797,8 @@
         <button class="btn sm" id="pd-adjust">✏️ تعديل يدوي للتقييم</button>
         <button class="btn sm" data-action="edit-player" data-id="${p.id}">تعديل البيانات</button>
       </div>
+      <div class="section-title" style="margin:8px 0"><h2 style="font-size:15px">📅 الطاقة والإحصائيات كل أسبوع</h2></div>
+      ${weeklyBreakdownHTML(playerId)}
       <div class="section-title" style="margin:8px 0"><h2 style="font-size:15px">📒 حسبة التقييم</h2><span class="hint">${log.length} عملية</span></div>
       <div class="card" style="overflow:auto;padding:8px">
         <table><thead><tr><th>الوقت</th><th>التفاصيل</th><th>التقييم</th></tr></thead><tbody>${history}</tbody></table>
@@ -1914,9 +1935,12 @@
     }
 
     const body = document.createElement("div");
+    // أسبوع المباراة: يحدّد على أي أسبوع تُطبَّق طاقات اللاعبين (يُحفظ عبر إعادة الرسم)
+    let matchWeek = (isEdit ? existing.week : App.state.club.week) || App.state.club.week;
     function renderBody() {
       const homeId = body.querySelector("#mt-home")?.value || (isEdit ? existing.homeTeamId : teams[0].id);
       const awayId = body.querySelector("#mt-away")?.value || (isEdit ? existing.awayTeamId : teams[1].id);
+      matchWeek = parseInt(body.querySelector("#mt-week")?.value, 10) || matchWeek;
       const evTeamId = body.querySelector("#ev-team")?.value || homeId;
       const evPlayers = App.teamPlayers(evTeamId);
       body.innerHTML = `
@@ -1924,6 +1948,8 @@
           <label class="field"><span>الفريق الأول</span><select id="mt-home">${teamOptions(homeId)}</select></label>
           <label class="field"><span>الفريق الثاني</span><select id="mt-away">${teamOptions(awayId)}</select></label>
         </div>
+        <label class="field"><span>أسبوع المباراة</span><input id="mt-week" type="number" min="1" value="${matchWeek}"></label>
+        <div class="small muted" style="margin-top:-6px;margin-bottom:8px">طاقات اللاعبين تُحتسب على هذا الأسبوع (كل أسبوع يبدأ من ${App.RATING_START}).</div>
         <div class="card" style="background:#0e1830">
           <div class="small muted" style="margin-bottom:8px">إضافة حدث</div>
           <div class="grid cols-2">
@@ -1962,12 +1988,13 @@
         $("[data-save]", root).onclick = () => {
           const homeTeamId = body.querySelector("#mt-home").value;
           const awayTeamId = body.querySelector("#mt-away").value;
+          const week = parseInt(body.querySelector("#mt-week").value, 10) || App.state.club.week;
           if (homeTeamId === awayTeamId) return toast("اختر فريقين مختلفين", "err");
           if (isEdit) {
-            App.updateMatch(existing.id, { homeTeamId, awayTeamId, events });
+            App.updateMatch(existing.id, { homeTeamId, awayTeamId, events, week });
             toast("حُفظت تعديلات المباراة (النتيجة والفلوس والتقييمات)", "ok");
           } else {
-            App.recordMatch({ homeTeamId, awayTeamId, events });
+            App.recordMatch({ homeTeamId, awayTeamId, events, week });
             toast("سُجّلت المباراة وحُدّثت الميزانيات والتقييمات", "ok");
           }
           close();
