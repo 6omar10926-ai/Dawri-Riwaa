@@ -1308,6 +1308,65 @@
   }
   App.removeImageBackground = removeImageBackground;
 
+  /* ---------- أدوات إزالة الخلفية على ImageData (للمحرّر التفاعلي) ---------- */
+  // تقدير لون الخلفية من عيّنات الحواف (يتجاهل البكسل الشفاف)
+  function imgBgEdges(d, w, h) {
+    let br = 0, bg = 0, bb = 0, n = 0;
+    const S = (px, py) => { const i = (py * w + px) * 4; if (d[i + 3] < 8) return; br += d[i]; bg += d[i + 1]; bb += d[i + 2]; n++; };
+    const sx = Math.max(1, Math.floor(w / 24)), sy = Math.max(1, Math.floor(h / 24));
+    for (let px = 0; px < w; px += sx) { S(px, 0); S(px, h - 1); }
+    for (let py = 0; py < h; py += sy) { S(0, py); S(w - 1, py); }
+    return n ? { r: br / n, g: bg / n, b: bb / n } : { r: 255, g: 255, b: 255 };
+  }
+  // إزالة متدرّجة لمنطقة متّصلة قرب لون مرجعي، بدءًا من بذور [px,py]
+  function imgFlood(d, w, h, seeds, bg, thr) {
+    const soft = thr * 0.6;
+    const dist = (i) => { const dr = d[i] - bg.r, dg = d[i + 1] - bg.g, db = d[i + 2] - bg.b; return Math.sqrt(dr * dr + dg * dg + db * db); };
+    const visited = new Uint8Array(w * h), stack = [];
+    const push = (px, py) => { if (px < 0 || py < 0 || px >= w || py >= h) return; const idx = py * w + px; if (visited[idx]) return; visited[idx] = 1; stack.push(idx); };
+    seeds.forEach(([px, py]) => push(px, py));
+    while (stack.length) {
+      const idx = stack.pop(), i = idx * 4, px = idx % w, py = (idx / w) | 0;
+      if (d[i + 3] === 0) { push(px + 1, py); push(px - 1, py); push(px, py + 1); push(px, py - 1); continue; }
+      const dd = dist(i);
+      if (dd >= thr) continue;
+      const a = dd <= soft ? 0 : Math.round((255 * (dd - soft)) / (thr - soft));
+      if (a < d[i + 3]) d[i + 3] = a;
+      push(px + 1, py); push(px - 1, py); push(px, py + 1); push(px, py - 1);
+    }
+  }
+  // نعومة الحواف: متوسّط 3×3 لقناة الألفا
+  function imgFeather(d, w, h) {
+    const a = new Uint8ClampedArray(w * h);
+    for (let i = 0; i < w * h; i++) a[i] = d[i * 4 + 3];
+    for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) {
+      let s = 0, c = 0;
+      for (let ky = -1; ky <= 1; ky++) for (let kx = -1; kx <= 1; kx++) {
+        const nx = px + kx, ny = py + ky; if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        s += a[ny * w + nx]; c++;
+      }
+      d[(py * w + px) * 4 + 3] = s / c;
+    }
+  }
+  // إزالة تلقائية من الحواف (على ImageData مباشرة)
+  App.imgEraseEdges = function (imageData) {
+    const d = imageData.data, w = imageData.width, h = imageData.height;
+    const bg = imgBgEdges(d, w, h);
+    const seeds = [];
+    for (let px = 0; px < w; px++) { seeds.push([px, 0]); seeds.push([px, h - 1]); }
+    for (let py = 0; py < h; py++) { seeds.push([0, py]); seeds.push([w - 1, py]); }
+    imgFlood(d, w, h, seeds, bg, 60);
+    imgFeather(d, w, h);
+  };
+  // إزالة يدوية: يحدّد المستخدم نقطة الخلفية، فتُزال منطقتها المتّصلة
+  App.imgEraseAt = function (imageData, px, py, thr) {
+    const d = imageData.data, w = imageData.width, h = imageData.height;
+    const i = (py * w + px) * 4;
+    const bg = { r: d[i], g: d[i + 1], b: d[i + 2] };
+    imgFlood(d, w, h, [[px, py]], bg, thr || 60);
+    imgFeather(d, w, h);
+  };
+
   // تحميل مجموعة صور (شعارات/صور لاعبين) ثم استدعاء cb بخريطة {src: Image|null}
   function loadImages(srcs, cb) {
     const map = {};
@@ -1546,9 +1605,15 @@
         <label class="field"><span>صورة (اختياري)</span><input id="pl-photo" type="file" accept="image/*"></label>
       </div>
       <div id="pl-photo-wrap" style="display:none;margin-bottom:12px">
-        <div class="row" style="gap:12px;align-items:center">
-          <img id="pl-photo-prev" alt="" style="width:64px;height:64px;border-radius:50%;object-fit:cover;background:#0e1830;border:1px solid var(--line)">
-          <span class="small muted" id="pl-photo-status">✨ تُزال الخلفية تلقائيًا</span>
+        <div class="row" style="gap:12px;align-items:flex-start;flex-wrap:wrap">
+          <canvas id="pl-photo-canvas" style="max-width:150px;max-height:150px;width:auto;height:auto;border-radius:12px;background:#0e1830;border:1px solid var(--line);cursor:crosshair;touch-action:none"></canvas>
+          <div style="flex:1;min-width:150px">
+            <label class="row" style="gap:8px;cursor:pointer;margin:0 0 8px"><input type="checkbox" id="pl-nobg" checked style="width:auto"> <span class="small">إزالة الخلفية</span></label>
+            <div class="small muted" id="pl-photo-status">اضغط على الخلفية في الصورة لإزالتها يدويًا.</div>
+            <div class="row" style="gap:6px;margin-top:8px">
+              <button type="button" class="btn sm" id="pl-photo-reset">↺ إعادة</button>
+            </div>
+          </div>
         </div>
       </div>
       <div class="small muted" style="margin-bottom:10px">طاقة اللاعب تبدأ كل أسبوع من ${App.RATING_START} وتتغيّر بتقييمات مباريات ذلك الأسبوع (الحد الأقصى ${App.RATING_MAX}).</div>
@@ -1560,23 +1625,62 @@
       body,
       foot: `<button class="btn primary" data-save>حفظ</button><button class="btn ghost" data-close>إلغاء</button>`,
       onOpen(root, close) {
-        const wrap = $("#pl-photo-wrap", root), prev = $("#pl-photo-prev", root), status = $("#pl-photo-status", root);
-        const showPrev = (src) => { if (src) { wrap.style.display = "block"; prev.src = src; } else { wrap.style.display = "none"; } };
-        if (p.photo) showPrev(p.photo); // عند التعديل: الصورة الحالية (مُعالجة مسبقًا)
-        // عند اختيار صورة جديدة: تُزال خلفيتها تلقائيًا دائمًا
+        // محرّر الصورة التفاعلي: تحكّم بالإزالة (تشغيل/إيقاف) + الضغط على الخلفية لإزالتها
+        const wrap = $("#pl-photo-wrap", root);
+        const canvas = $("#pl-photo-canvas", root);
+        const cctx = canvas.getContext("2d", { willReadFrequently: true });
+        const nobg = $("#pl-nobg", root);
+        const statusEl = $("#pl-photo-status", root);
+        let origImg = null;
+
+        const commit = () => { photoData = origImg ? canvas.toDataURL("image/png") : null; };
+        const baseDraw = () => { cctx.clearRect(0, 0, canvas.width, canvas.height); cctx.drawImage(origImg, 0, 0, canvas.width, canvas.height); };
+        const applyAuto = () => {
+          baseDraw();
+          const idata = cctx.getImageData(0, 0, canvas.width, canvas.height);
+          App.imgEraseEdges(idata);
+          cctx.putImageData(idata, 0, 0); commit();
+        };
+        const refresh = () => {
+          if (!origImg) return;
+          if (nobg.checked) { applyAuto(); statusEl.textContent = "اضغط على أي خلفية متبقّية لإزالتها."; }
+          else { baseDraw(); commit(); statusEl.textContent = "الخلفية باقية (الإزالة موقّفة)."; }
+        };
+        const loadImg = (dataUrl, auto) => {
+          const im = new Image();
+          im.onload = () => {
+            origImg = im;
+            const maxD = 320, s = Math.min(1, maxD / Math.max(im.width, im.height));
+            canvas.width = Math.max(1, Math.round(im.width * s));
+            canvas.height = Math.max(1, Math.round(im.height * s));
+            wrap.style.display = "block";
+            baseDraw(); commit();
+            if (auto) refresh();
+          };
+          im.src = dataUrl;
+        };
+        // إزالة يدوية عند الضغط على نقطة (تحدّد الخلفية بنفسك)
+        const eraseAt = (clientX, clientY) => {
+          if (!origImg || !nobg.checked) return;
+          const rect = canvas.getBoundingClientRect();
+          const px = Math.round(((clientX - rect.left) / rect.width) * canvas.width);
+          const py = Math.round(((clientY - rect.top) / rect.height) * canvas.height);
+          if (px < 0 || py < 0 || px >= canvas.width || py >= canvas.height) return;
+          const idata = cctx.getImageData(0, 0, canvas.width, canvas.height);
+          App.imgEraseAt(idata, px, py, 60);
+          cctx.putImageData(idata, 0, 0); commit();
+          statusEl.textContent = "أُزيلت المنطقة المحدّدة ✨";
+        };
+        canvas.onclick = (e) => eraseAt(e.clientX, e.clientY);
+        canvas.ontouchstart = (e) => { const t = e.touches[0]; if (t) { e.preventDefault(); eraseAt(t.clientX, t.clientY); } };
+        nobg.onchange = refresh;
+        $("#pl-photo-reset", root).onclick = () => refresh();
+        if (p.photo) loadImg(p.photo, false); // عند التعديل: اعرض الحالية كما هي دون إعادة معالجة
         $("#pl-photo", root).onchange = (e) => {
           const f = e.target.files[0];
           if (!f) return;
           const rd = new FileReader();
-          rd.onload = () => {
-            showPrev(rd.result);
-            if (status) status.textContent = "⏳ جارٍ إزالة الخلفية…";
-            removeImageBackground(rd.result, (out) => {
-              photoData = out;
-              showPrev(out);
-              if (status) status.textContent = "✨ أُزيلت الخلفية تلقائيًا";
-            });
-          };
+          rd.onload = () => loadImg(rd.result, true); // صورة جديدة: إزالة تلقائية أولية
           rd.readAsDataURL(f);
         };
         $("[data-save]", root).onclick = () => {
