@@ -296,6 +296,15 @@
     </div></nav>`;
   }
 
+  // أسبوع التصفّح (للاطّلاع فقط) — منفصل عن الأسبوع الحالي club.week الذي يتقدّم
+  // بزر "إنهاء الأسبوع". التنقّل من القائمة يغيّر هذا فقط ولا يمسّ الأسبوع الحالي.
+  let viewWeek = null; // null = تابع الأسبوع الحالي
+  function currentViewWeek() {
+    const cw = App.state.club.week || 1;
+    if (viewWeek == null) return cw;
+    return Math.min(Math.max(1, viewWeek), cw);
+  }
+
   // قائمة الأسابيع المتاحة للتنقّل (1..الأسبوع الحالي + أي أسبوع فيه مباريات/مواعيد)
   function weekOptionsList() {
     const c = App.state.club;
@@ -309,9 +318,10 @@
   function renderTopbar() {
     const c = App.state.club;
     // المشرف: قائمة منسدلة للتنقّل بين الأسابيع. غيره: عرض ثابت للأسبوع الحالي.
+    const vw = currentViewWeek();
     const weekControl = isAdmin()
-      ? `<label class="week-pill week-select" title="تنقّل بين الأسابيع">الأسبوع
-          <select id="week-select">${weekOptionsList().map((w) => `<option value="${w}" ${w === c.week ? "selected" : ""}>${w}</option>`).join("")}</select>
+      ? `<label class="week-pill week-select" title="تنقّل بين الأسابيع (للاطّلاع فقط)">الأسبوع
+          <select id="week-select">${weekOptionsList().map((w) => `<option value="${w}" ${w === vw ? "selected" : ""}>${w}${w === c.week ? " (الحالي)" : ""}</option>`).join("")}</select>
         </label>`
       : `<div class="week-pill">الأسبوع <b>${c.week}</b></div>`;
     return `<header class="topbar"><div class="inner">
@@ -351,7 +361,8 @@
 
   // تشكيلة الأسبوع (6 لاعبين حسب التقييم) — بطاقة على الملعب
   function teamOfWeekCard() {
-    const sel = App.teamOfWeek(6);
+    const vw = currentViewWeek();
+    const sel = App.teamOfWeek(6, vw);
     if (!sel.length) return "";
     const POS_ORDER = ["هجوم", "وسط", "دفاع", "حارس"];
     const token = (p) => {
@@ -360,7 +371,7 @@
         ? `<img class="totw-photo" src="${p.photo}" alt="">`
         : `<div class="totw-photo ph">👤</div>`;
       return `<div class="totw-player">
-        <div class="totw-ovr">${App.playerOverall(p)}</div>
+        <div class="totw-ovr">${App.playerWeekRating(p.id, vw)}</div>
         ${photo}
         <div class="totw-name">${esc(p.name)}</div>
         <div class="totw-pos">${esc(p.position || "")}${team ? " • " + esc(team.name) : ""}</div>
@@ -370,13 +381,14 @@
     const others = sel.filter((p) => !POS_ORDER.includes(p.position || ""));
     if (others.length) lines[1] = lines[1].concat(others); // غير المصنّفين في خط الوسط
     const rows = lines.filter((l) => l.length).map((l) => `<div class="totw-line">${l.map(token).join("")}</div>`).join("");
-    return `<div class="section-title"><h2>🏅 تشكيلة الأسبوع</h2><span class="hint">أفضل 6 حسب التقييم • أسبوع ${App.state.club.week}</span></div>
+    return `<div class="section-title"><h2>🏅 تشكيلة الأسبوع</h2><span class="hint">أفضل 6 حسب التقييم • أسبوع ${vw}</span></div>
       <div class="card totw">${rows}</div>`;
   }
 
   // أبرز صفقات الأسبوع (أعلى الصفقات سعرًا من السوق الحالي + الأرشيف)
   function topDealsCard() {
-    const deals = App.weekDeals(App.state.club.week).slice(0, 5);
+    const vw = currentViewWeek();
+    const deals = App.weekDeals(vw).slice(0, 5);
     if (!deals.length) return "";
     const rows = deals
       .map(
@@ -386,7 +398,7 @@
         </div>`
       )
       .join("");
-    return `<div class="section-title"><h2>💸 أبرز صفقات الأسبوع</h2><span class="hint">أعلى الصفقات • أسبوع ${App.state.club.week}</span></div>
+    return `<div class="section-title"><h2>💸 أبرز صفقات الأسبوع</h2><span class="hint">أعلى الصفقات • أسبوع ${vw}</span></div>
       <div class="card">${rows}</div>`;
   }
 
@@ -528,9 +540,9 @@
       ${body}`;
   }
 
-  let matchesAllWeeks = false; // عرض كل الأسابيع أو أحداث الأسبوع الحالي فقط
+  let matchesAllWeeks = false; // عرض كل الأسابيع أو أحداث الأسبوع المختار فقط
   function viewMatches() {
-    const cw = App.state.club.week;
+    const cw = currentViewWeek();
     let matches = App.state.matches.slice().reverse();
     if (!matchesAllWeeks) matches = matches.filter((m) => m.week === cw);
     const list = matches.length
@@ -1347,11 +1359,10 @@
     document.querySelectorAll("[data-action]").forEach((b) => {
       b.onclick = () => handleAction(b.getAttribute("data-action"), b.getAttribute("data-id"));
     });
-    // التنقّل بين الأسابيع من الشريط العلوي (للمشرف)
+    // التنقّل بين الأسابيع من الشريط العلوي (تصفّح فقط — لا يغيّر الأسبوع الحالي)
     const ws = document.getElementById("week-select");
     if (ws) ws.onchange = () => {
-      App.state.club.week = parseInt(ws.value, 10) || App.state.club.week;
-      App.save();
+      viewWeek = parseInt(ws.value, 10) || null;
       render();
     };
   }
@@ -1386,6 +1397,7 @@
       case "advance-week":
         return confirmBox("إنهاء الأسبوع الحالي والانتقال للأسبوع التالي؟", () => {
           App.advanceWeek();
+          viewWeek = null; // انتقل للأسبوع الجديد في التصفّح أيضًا
           toast("انتقلنا للأسبوع " + App.state.club.week, "ok");
           render();
         });

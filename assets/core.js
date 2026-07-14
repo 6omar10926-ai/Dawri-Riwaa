@@ -457,10 +457,11 @@
 
   // تشكيلة الأسبوع: 6 لاعبين مبنية على تقييماتهم (طاقاتهم) بخطة 1-2-2-1
   // (حارس + مدافعان + وسطان + مهاجم)، وتُكمَّل من الأعلى تقييمًا عند نقص مركز.
-  App.teamOfWeek = function (size) {
+  App.teamOfWeek = function (size, week) {
     size = size || 6;
     const players = App.state.players.slice();
-    const byRating = (a, b) => App.playerOverall(b) - App.playerOverall(a);
+    const rate = (p) => (week ? App.playerWeekRating(p.id, week) : App.playerOverall(p));
+    const byRating = (a, b) => rate(b) - rate(a);
     const used = new Set();
     const take = (pos, n) => {
       const picks = players
