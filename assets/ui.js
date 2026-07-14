@@ -402,6 +402,27 @@
       <div class="card">${rows}</div>`;
   }
 
+  // أبرز أحداث الأسبوع: أحداث يدوية يضيفها المشرف (إيقاف لاعب، إعلان...)
+  function weekEventsCard() {
+    const vw = currentViewWeek();
+    const events = App.weekEventsFor(vw).slice().reverse();
+    if (!isAdmin() && !events.length) return ""; // للمشاهد: تظهر فقط إن وُجدت
+    const list = events.length
+      ? events.map((e) => `<div class="row between" style="padding:8px 0;border-top:1px solid var(--line)">
+          <span>📌 ${esc(e.text)}</span>
+          ${isAdmin() ? `<button class="btn sm danger" data-action="del-week-event" data-id="${e.id}">×</button>` : ""}
+        </div>`).join("")
+      : `<div class="small muted">لا أحداث مضافة لهذا الأسبوع.</div>`;
+    const addBox = isAdmin()
+      ? `<div class="row" style="gap:8px;margin-top:10px">
+          <input id="new-week-event" placeholder="مثال: إيقاف اللاعب فلان مباراة واحدة" style="flex:1">
+          <button class="btn sm primary" data-action="add-week-event">＋ إضافة</button>
+        </div>`
+      : "";
+    return `<div class="section-title"><h2>📢 أبرز أحداث الأسبوع</h2><span class="hint">أسبوع ${vw}</span></div>
+      <div class="card">${list}${addBox}</div>`;
+  }
+
   function viewDashboard() {
     const teams = App.state.teams;
     const teamCards = teams
@@ -469,6 +490,7 @@
 
       ${teamOfWeekCard()}
       ${topDealsCard()}
+      ${weekEventsCard()}
       ${upcomingFixturesCard()}
       ${weekBox}`;
   }
@@ -1371,7 +1393,7 @@
   const ADMIN_ACTIONS = new Set([
     "settings", "advance-week", "new-match", "edit-match", "del-match", "live-match", "live-fixture", "awards",
     "add-player", "add-player-to", "edit-player", "eval-player", "del-player",
-    "edit-team", "adjust-budget", "open-market-random", "open-market-manual", "finalize-lot",
+    "edit-team", "adjust-budget", "add-week-event", "del-week-event", "open-market-random", "open-market-manual", "finalize-lot",
     "start-market", "close-market", "auction-screen", "export", "import",
     "add-fixture", "edit-fixture", "del-fixture", "fixture-done",
   ]);
@@ -1395,10 +1417,10 @@
         return confirmBox("تسجيل الخروج من الحساب الحالي؟", logout);
       case "settings": return openSettings();
       case "advance-week":
-        return confirmBox("إنهاء الأسبوع الحالي والانتقال للأسبوع التالي؟", () => {
+        return confirmBox("إنهاء الأسبوع الحالي؟ ستُمنح جوائز تشكيلة الأسبوع تلقائيًا ثم ننتقل للأسبوع التالي.", () => {
           App.advanceWeek();
           viewWeek = null; // انتقل للأسبوع الجديد في التصفّح أيضًا
-          toast("انتقلنا للأسبوع " + App.state.club.week, "ok");
+          toast("مُنحت جوائز تشكيلة الأسبوع • انتقلنا للأسبوع " + App.state.club.week, "ok");
           render();
         });
       case "new-match": return openMatchForm();
@@ -1416,6 +1438,15 @@
       case "del-match":
         return confirmBox("حذف المباراة وإرجاع فلوسها وتقييماتها؟", () => { App.deleteMatch(id); toast("حُذفت المباراة"); render(); }, true);
       case "toggle-matches-weeks": matchesAllWeeks = !matchesAllWeeks; return render();
+      case "add-week-event": {
+        const inp = document.getElementById("new-week-event");
+        const res = App.addWeekEvent(inp ? inp.value : "", currentViewWeek());
+        if (!res.ok) return toast(res.msg, "err");
+        toast("أُضيف الحدث", "ok");
+        return render();
+      }
+      case "del-week-event":
+        return confirmBox("حذف هذا الحدث؟", () => { App.removeWeekEvent(id); render(); }, true);
       case "go-market": return go("market");
       case "auction-screen": return go("auction");
       case "awards": return openAwards();
