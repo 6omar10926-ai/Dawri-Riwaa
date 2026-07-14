@@ -187,6 +187,7 @@
       ratingLog: [],
       market: { active: false, week: 1, lots: [] },
       marketHistory: [], // أرشيف الأسواق المغلقة مع صفقاتها
+      weekEvents: [], // أحداث يدوية لكل أسبوع {id,week,text,date}
     };
   }
   App.defaultState = defaultState;
@@ -272,6 +273,7 @@
     // سوق نشط بلا لاعبين لا معنى له — نعتبره مغلقًا حتى لا تظهر صفحة فارغة
     if (s.market.active && !s.market.lots.length) s.market.active = false;
     s.marketHistory = Array.isArray(s.marketHistory) ? s.marketHistory : [];
+    s.weekEvents = Array.isArray(s.weekEvents) ? s.weekEvents : [];
     return s;
   }
   function saveLocal() {
@@ -940,11 +942,50 @@
   };
 
   /* ---------- الأسبوع ---------- */
+  // جوائز تشكيلة الأسبوع: كل لاعب في تشكيلة الأسبوع → فريقه يأخذ مبلغ الجائزة
+  // (moneyRules.teamOfWeek، افتراضيًا 500 ألف). تُمنح مرة واحدة لكل أسبوع.
+  function awardTeamOfWeek(week) {
+    const amount = App.state.moneyRules.teamOfWeek || 0;
+    if (!amount) return;
+    // تفادي التكرار لنفس الأسبوع
+    if (App.state.ledger.some((l) => l.refType === "award" && l.refId === "totw-auto" && l.week === week)) return;
+    App.teamOfWeek(6, week).forEach((p) => {
+      if (!p.teamId) return; // لاعب حر لا نادي له
+      addTransaction(p.teamId, amount, "جائزة تشكيلة الأسبوع " + week + " — " + p.name, {
+        refType: "award",
+        refId: "totw-auto",
+      });
+    });
+  }
+  App.awardTeamOfWeek = awardTeamOfWeek;
+
   function advanceWeek() {
+    awardTeamOfWeek(App.state.club.week); // جوائز الأسبوع المنتهي قبل الانتقال
     App.state.club.week += 1;
     save();
   }
   App.advanceWeek = advanceWeek;
+
+  /* ---------- أحداث الأسبوع اليدوية (إعلانات/عقوبات...) ---------- */
+  App.addWeekEvent = function (text, week) {
+    text = (text || "").trim();
+    if (!text) return { ok: false, msg: "اكتب نص الحدث" };
+    App.state.weekEvents.push({
+      id: uid(),
+      week: week || App.state.club.week,
+      text,
+      date: new Date().toISOString(),
+    });
+    save();
+    return { ok: true };
+  };
+  App.removeWeekEvent = function (id) {
+    App.state.weekEvents = App.state.weekEvents.filter((e) => e.id !== id);
+    save();
+  };
+  App.weekEventsFor = function (week) {
+    return (App.state.weekEvents || []).filter((e) => e.week === week);
+  };
 
   /* ---------- المباريات القادمة (Fixtures) — يديرها المشرف ---------- */
   // fixture: { id, homeTeamId, awayTeamId, week, datetime, note, status:"upcoming"|"done" }
