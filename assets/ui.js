@@ -1259,12 +1259,14 @@
         for (let px = 0; px < w; px += sx) { sample(px, 0); sample(px, h - 1); }
         for (let py = 0; py < h; py += sy) { sample(0, py); sample(w - 1, py); }
         br /= n; bg /= n; bb /= n;
-        const thr = 46; // حساسية التشابه مع الخلفية
-        const near = (i) => {
+        const thr = 60; // نطاق التشابه مع الخلفية
+        const soft = thr * 0.6; // ما دونه شفاف تمامًا، وما بينه وthr انتقال متدرّج
+        const dist = (i) => {
           const dr = d[i] - br, dg = d[i + 1] - bg, db = d[i + 2] - bb;
-          return Math.sqrt(dr * dr + dg * dg + db * db) < thr;
+          return Math.sqrt(dr * dr + dg * dg + db * db);
         };
-        // تعبئة من الحواف: يشمل فقط الخلفية المتّصلة بالحافة (لا يمسّ ألوان الوجه المشابهة)
+        // تعبئة من الحواف: خلفية متّصلة بالحافة فقط (لا يمسّ ألوان الوجه المشابهة)
+        const alpha = new Uint8ClampedArray(w * h); alpha.fill(255);
         const visited = new Uint8Array(w * h);
         const stack = [];
         const pushpx = (px, py) => {
@@ -1276,11 +1278,27 @@
         for (let py = 0; py < h; py++) { pushpx(0, py); pushpx(w - 1, py); }
         while (stack.length) {
           const idx = stack.pop(), i = idx * 4;
-          if (!near(i)) continue;
-          d[i + 3] = 0; // شفاف
+          const dd = dist(i);
+          if (dd >= thr) continue; // مقدّمة (ليست خلفية)
+          // ألفا متدرّجة: قرب لون الخلفية = شفاف، وعلى الحدّ = شبه شفاف (لحواف ناعمة)
+          alpha[idx] = dd <= soft ? 0 : Math.round((255 * (dd - soft)) / (thr - soft));
           const px = idx % w, py = (idx / w) | 0;
           pushpx(px + 1, py); pushpx(px - 1, py); pushpx(px, py + 1); pushpx(px, py - 1);
         }
+        // نعومة إضافية: متوسّط 3×3 لقناة الألفا يلطّف تسنّن الحواف
+        const smooth = new Uint8ClampedArray(w * h);
+        for (let py = 0; py < h; py++) {
+          for (let px = 0; px < w; px++) {
+            let s = 0, cnt = 0;
+            for (let ky = -1; ky <= 1; ky++) for (let kx = -1; kx <= 1; kx++) {
+              const nx = px + kx, ny = py + ky;
+              if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+              s += alpha[ny * w + nx]; cnt++;
+            }
+            smooth[py * w + px] = s / cnt;
+          }
+        }
+        for (let idx = 0; idx < w * h; idx++) d[idx * 4 + 3] = smooth[idx];
         x.putImageData(id, 0, 0);
         cb(c.toDataURL("image/png"));
       } catch (e) { console.error("فشل إزالة الخلفية", e); cb(dataUrl); }
@@ -1530,7 +1548,7 @@
       <div id="pl-photo-wrap" style="display:none;margin-bottom:12px">
         <div class="row" style="gap:12px;align-items:center">
           <img id="pl-photo-prev" alt="" style="width:64px;height:64px;border-radius:50%;object-fit:cover;background:#0e1830;border:1px solid var(--line)">
-          <label class="row" style="gap:8px;cursor:pointer;margin:0"><input type="checkbox" id="pl-nobg" checked style="width:auto"> <span class="small">إزالة الخلفية (أفضل مع خلفية بسيطة)</span></label>
+          <span class="small muted" id="pl-photo-status">✨ تُزال الخلفية تلقائيًا</span>
         </div>
       </div>
       <div class="small muted" style="margin-bottom:10px">طاقة اللاعب تبدأ كل أسبوع من ${App.RATING_START} وتتغيّر بتقييمات مباريات ذلك الأسبوع (الحد الأقصى ${App.RATING_MAX}).</div>
@@ -1542,24 +1560,23 @@
       body,
       foot: `<button class="btn primary" data-save>حفظ</button><button class="btn ghost" data-close>إلغاء</button>`,
       onOpen(root, close) {
-        let originalPhoto = p.photo || null; // الصورة كما أُدخلت قبل المعالجة
-        const wrap = $("#pl-photo-wrap", root), prev = $("#pl-photo-prev", root), nobg = $("#pl-nobg", root);
+        const wrap = $("#pl-photo-wrap", root), prev = $("#pl-photo-prev", root), status = $("#pl-photo-status", root);
         const showPrev = (src) => { if (src) { wrap.style.display = "block"; prev.src = src; } else { wrap.style.display = "none"; } };
-        const applyPhoto = () => {
-          if (!originalPhoto) { photoData = null; showPrev(null); return; }
-          if (nobg.checked) {
-            removeImageBackground(originalPhoto, (out) => { photoData = out; showPrev(out); });
-          } else {
-            photoData = originalPhoto; showPrev(originalPhoto);
-          }
-        };
-        if (originalPhoto) showPrev(originalPhoto); // عند التعديل: أظهر الحالية كما هي
-        nobg.onchange = applyPhoto;
+        if (p.photo) showPrev(p.photo); // عند التعديل: الصورة الحالية (مُعالجة مسبقًا)
+        // عند اختيار صورة جديدة: تُزال خلفيتها تلقائيًا دائمًا
         $("#pl-photo", root).onchange = (e) => {
           const f = e.target.files[0];
           if (!f) return;
           const rd = new FileReader();
-          rd.onload = () => { originalPhoto = rd.result; applyPhoto(); };
+          rd.onload = () => {
+            showPrev(rd.result);
+            if (status) status.textContent = "⏳ جارٍ إزالة الخلفية…";
+            removeImageBackground(rd.result, (out) => {
+              photoData = out;
+              showPrev(out);
+              if (status) status.textContent = "✨ أُزيلت الخلفية تلقائيًا";
+            });
+          };
           rd.readAsDataURL(f);
         };
         $("[data-save]", root).onclick = () => {
