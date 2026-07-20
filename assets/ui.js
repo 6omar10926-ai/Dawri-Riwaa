@@ -263,6 +263,27 @@
       </div>`;
   }
 
+  // عرض بطاقة مميّزة معروضة في المزاد (بديل بطاقة اللاعب لعناصر type=card)
+  function auctionCardHTML(snap) {
+    snap = snap || {};
+    const eff = App.cardEffect(snap.eff);
+    const vt = App.cardValueText(snap);
+    const sub = (eff ? eff.label : "") + (vt ? " " + vt : "");
+    return `<div class="player-card" style="text-align:center">
+      <div style="font-size:52px;line-height:1;margin:6px 0">${esc(snap.icon || "🃏")}</div>
+      <div class="pc-name" style="text-align:center">${esc(snap.name || "بطاقة")}</div>
+      <div class="small" style="color:var(--gold);text-align:center;margin-top:2px">🃏 بطاقة مميّزة • ${esc(sub)}</div>
+      ${snap.desc ? `<div class="small muted" style="text-align:center;margin-top:6px">${esc(snap.desc)}</div>` : ""}
+    </div>`;
+  }
+
+  // جسم عنصر المزاد (لاعب أو بطاقة)
+  function marketLotBodyHTML(lot) {
+    if (lot.type === "card") return auctionCardHTML(lot.cardSnap);
+    const p = App.getPlayer(lot.playerId);
+    return p ? playerCardHTML(p) : `<div class="muted small">لاعب محذوف</div>`;
+  }
+
   /* ---------- التبويبات ---------- */
   const TAB = {
     dashboard: { key: "dashboard", label: "الرئيسية", ico: "🏠" },
@@ -273,11 +294,12 @@
     market: { key: "market", label: "السوق", ico: "💰" },
     ledger: { key: "ledger", label: "الحسبة", ico: "📒" },
     lineups: { key: "lineups", label: "التشكيلات", ico: "🧩" },
+    cards: { key: "cards", label: "البطاقات", ico: "🃏" },
   };
   // تبويبات كل دور
   function roleTabs() {
     if (isAdmin())
-      return [TAB.dashboard, TAB.teams, TAB.players, TAB.matches, TAB.fixtures, TAB.market, TAB.ledger];
+      return [TAB.dashboard, TAB.teams, TAB.players, TAB.matches, TAB.fixtures, TAB.market, TAB.cards, TAB.ledger];
     if (isPresident()) return [TAB.lineups, TAB.market];
     // عرض عام
     return [TAB.dashboard, TAB.teams, TAB.players, TAB.matches, TAB.fixtures];
@@ -627,10 +649,7 @@
 
   // مرحلة التحضير: نُزّل اللاعبون ولم يبدأ المزاد
   function viewMarketStaging(mk) {
-    const cards = mk.lots.map((lot) => {
-      const p = App.getPlayer(lot.playerId);
-      return p ? `<div class="card">${playerCardHTML(p)}</div>` : "";
-    }).join("");
+    const cards = mk.lots.map((lot) => `<div class="card">${marketLotBodyHTML(lot)}</div>`).join("");
     const startBtn = isAdmin()
       ? `<button class="btn gold" data-action="start-market">▶️ ابدأ السوق</button>
          <button class="btn" data-action="open-market-manual">✋ تعديل اللاعبين</button>
@@ -672,8 +691,7 @@
     const hiddenCount = mk.lots.length - revealed.length;
     const lots = revealed
       .map((lot) => {
-        const p = App.getPlayer(lot.playerId);
-        if (!p) return "";
+        if (lot.type !== "card" && !App.getPlayer(lot.playerId)) return "";
         const highest = lot.bids.length ? lot.bids[lot.bids.length - 1] : null;
         const highTeam = highest ? App.getTeam(highest.teamId) : null;
         const badge =
@@ -695,7 +713,7 @@
                ${bidHint}
              </div>`;
         } else if (lot.status === "open" && isPresident() && myTeam) {
-          bidControls = App.marketTeamAtCap(myTeam.id, mk)
+          bidControls = (lot.type !== "card" && App.marketTeamAtCap(myTeam.id, mk))
             ? `<div class="small muted" style="margin-top:12px">✓ استنفدت نصيبك (${App.marketMaxPerTeam(mk)} لاعبين) في هذه الجولة.</div>`
             : `<div class="row wrap" style="margin-top:12px;gap:8px">
                <input type="hidden" data-bid-team="${lot.id}" value="${myTeam.id}">
@@ -710,7 +728,7 @@
           : `<div class="small muted" style="margin-top:8px">لا مزايدات بعد</div>`;
         return `<div class="card">
             <div class="row between">${badge}</div>
-            <div style="margin-top:10px">${playerCardHTML(p)}</div>
+            <div style="margin-top:10px">${marketLotBodyHTML(lot)}</div>
             ${bidsLog}
             ${bidControls}
           </div>`;
@@ -720,7 +738,7 @@
     const hiddenHint = hiddenCount
       ? `<div class="card" style="text-align:center;border-style:dashed">
           <div class="big" style="font-size:30px">🔒</div>
-          <div class="muted">${hiddenCount} لاعب قادم — يظهر بعد الإرساء على الحالي</div>
+          <div class="muted">${hiddenCount} عنصر قادم — يظهر بعد الإرساء على الحالي</div>
         </div>`
       : "";
 
@@ -765,9 +783,10 @@
       const soldList = mk.lots
         .filter((l) => l.status === "sold")
         .map((l) => {
-          const p = App.getPlayer(l.playerId), t = App.getTeam(l.winnerTeamId);
+          const t = App.getTeam(l.winnerTeamId);
+          const nm = l.type === "card" ? "🃏 " + (l.cardSnap ? l.cardSnap.name : "بطاقة") : (App.getPlayer(l.playerId)?.name || "");
           return `<div class="row between" style="padding:8px 0;border-bottom:1px solid var(--line)">
-            <span>${esc(p ? p.name : "")}</span>
+            <span>${esc(nm)}</span>
             <span class="mono" style="color:${t?.color}">${esc(t?.name || "")} — ${fmtMoney(l.finalPrice)}</span>
           </div>`;
         })
@@ -782,11 +801,13 @@
       </div>`;
     }
 
-    const p = App.getPlayer(lot.playerId);
+    const isCardLot = lot.type === "card";
+    const snap = lot.cardSnap || {};
+    const p = isCardLot ? null : App.getPlayer(lot.playerId);
     const ovr = p ? App.playerOverall(p) : "؟";
     const photo = p && p.photo
       ? `<img class="auction-photo" src="${p.photo}" alt="">`
-      : `<div class="auction-photo ph">👤</div>`;
+      : `<div class="auction-photo ph">${isCardLot ? esc(snap.icon || "🃏") : "👤"}</div>`;
     const highest = lot.bids.length ? lot.bids[lot.bids.length - 1] : null;
     const highTeam = highest ? App.getTeam(highest.teamId) : null;
 
@@ -814,16 +835,20 @@
 
     return `<div class="auction-screen">
       <div class="auction-top">
-        <span class="chip">لاعب ${Math.min(idx + 1, total)} من ${total}</span>
+        <span class="chip">${isCardLot ? "بطاقة" : "لاعب"} ${Math.min(idx + 1, total)} من ${total}</span>
         <span class="chip">أُرسي على ${resolved}</span>
         <span class="chip">⏱ <span class="js-auction-countdown${typeof mk.endsAt === "number" && mk.endsAt - Date.now() <= 10000 ? " urgent" : ""}">${typeof mk.endsAt === "number" ? Math.max(0, Math.ceil((mk.endsAt - Date.now()) / 1000)) + "ث" : "—"}</span></span>
       </div>
       <div class="auction-main">
         <div class="auction-player">
           ${photo}
-          <div class="auction-ovr">${ovr}</div>
-          <div class="auction-name">${esc(p ? p.name : "؟")}</div>
-          <div class="auction-pos muted">${esc((p && p.position) || "")}${p && p.number ? " • #" + esc(p.number) : ""}</div>
+          ${isCardLot
+            ? `<div class="auction-ovr" style="background:var(--gold)">🃏</div>
+               <div class="auction-name">${esc(snap.name || "بطاقة")}</div>
+               <div class="auction-pos muted">${esc((App.cardEffect(snap.eff)?.label) || "")} ${esc(App.cardValueText(snap))}</div>`
+            : `<div class="auction-ovr">${ovr}</div>
+               <div class="auction-name">${esc(p ? p.name : "؟")}</div>
+               <div class="auction-pos muted">${esc((p && p.position) || "")}${p && p.number ? " • #" + esc(p.number) : ""}</div>`}
         </div>
         <div class="auction-bidbox">${bidBox}</div>
       </div>
@@ -1041,6 +1066,73 @@
     return `<div class="pitch">${tokens}</div>`;
   }
 
+  // قسم بطاقات المباراة داخل شاشة التشكيلة (لرئيس الفريق + المشرف)
+  function lineupCardsHTML(fixtureId, teamId) {
+    const committed = App.teamCommittedFor(fixtureId, teamId);
+    const owned = App.teamCardsByStatus(teamId, "owned");
+    const committedHTML = committed.length
+      ? committed.map((ci) => {
+          const tgt = ci.targetPlayerId ? App.getPlayer(ci.targetPlayerId) : null;
+          return `<div class="row between" style="padding:7px 0;border-bottom:1px solid var(--line);gap:8px">
+            <span style="flex:1;min-width:0">${esc(ci.icon)} <b>${esc(ci.name)}</b> ${tgt ? `<span class="small muted">🎯 ${esc(tgt.name)}</span>` : ""} <span class="chip" style="font-size:10px">مفعّلة 🔒</span></span>
+            ${isAdmin() ? `<button class="btn sm ghost" data-uncommit="${ci.iid}">🔓 فكّ</button>` : ""}
+          </div>`;
+        }).join("")
+      : `<div class="small muted" style="padding:4px 0">لم تُفعّل أي بطاقة لهذه المباراة.</div>`;
+    const ownedHTML = owned.length
+      ? owned.map((ci) => {
+          const eff = App.cardEffect(ci.eff);
+          const sub = (eff ? eff.label : "") + " " + App.cardValueText(ci);
+          return `<div class="row between" style="padding:7px 0;border-bottom:1px solid var(--line);gap:8px">
+            <span style="flex:1;min-width:0">${esc(ci.icon)} <b>${esc(ci.name)}</b> <span class="small" style="color:var(--gold)">${esc(sub)}</span>${ci.desc ? `<div class="small muted">${esc(ci.desc)}</div>` : ""}</span>
+            <button class="btn sm primary" data-commit="${ci.iid}">استخدم</button>
+          </div>`;
+        }).join("")
+      : `<div class="small muted" style="padding:4px 0">لا بطاقات متاحة في مخزون فريقك.</div>`;
+    return `<div class="section-title" style="margin:14px 0 6px"><h2 style="font-size:15px">🃏 بطاقات المباراة</h2><span class="hint">فعّلها لهذه المباراة</span></div>
+      <div class="card" style="padding:12px">
+        <div class="small muted" style="margin-bottom:2px">المفعّلة (مقفلة)</div>
+        ${committedHTML}
+        <div class="small muted" style="margin:10px 0 2px">المتاحة</div>
+        ${ownedHTML}
+        <div class="small muted" style="margin-top:8px">⚠️ بعد التأكيد تُقفل البطاقة ولا يمكن التراجع — المشرف وحده يفكّها.</div>
+      </div>`;
+  }
+
+  // تأكيد تفعيل بطاقة (مع اختيار لاعب إن لزم)
+  function openCommitCard(fixtureId, teamId, iid, onDone) {
+    const ci = App.getCardInstance(teamId, iid);
+    if (!ci) return toast("البطاقة غير موجودة", "err");
+    const eff = App.cardEffect(ci.eff);
+    const needsPlayer = eff && eff.needsTarget === "ownPlayer";
+    const players = App.teamPlayers(teamId);
+    const body = `
+      ${cardBadgeHTML(ci, {})}
+      ${needsPlayer ? `<label class="field" style="margin-top:10px"><span>اختر اللاعب المستفيد</span>
+        <select id="commit-player"><option value="">—</option>${players.map((p) => `<option value="${p.id}">${esc(p.name)}${p.number ? " #" + esc(p.number) : ""}</option>`).join("")}</select></label>` : ""}
+      <div class="small" style="color:var(--danger);margin-top:8px">بعد التأكيد تُقفل البطاقة لهذه المباراة ولا يمكنك التراجع.</div>`;
+    modal({
+      title: "تأكيد تفعيل: " + ci.name,
+      body,
+      foot: `<button class="btn primary" data-save>✔ أكّد التفعيل</button><button class="btn ghost" data-close>إلغاء</button>`,
+      onOpen(root, close) {
+        $("[data-save]", root).onclick = () => {
+          const opts = {};
+          if (needsPlayer) {
+            const pid = $("#commit-player", root).value;
+            if (!pid) return toast("اختر لاعبًا من فريقك", "err");
+            opts.targetPlayerId = pid;
+          }
+          const res = App.commitCard(teamId, iid, fixtureId, opts);
+          if (!res.ok) return toast(res.msg, "err");
+          toast("فُعّلت البطاقة 🔒", "ok");
+          close();
+          if (onDone) onDone();
+        };
+      },
+    });
+  }
+
   function openLineupBuilder(fixtureId, teamId) {
     const team = App.getTeam(teamId);
     const fixture = App.getFixture(fixtureId);
@@ -1074,7 +1166,8 @@
         <label class="field"><span>الخطة</span><select id="lu-formation">${formationOpts}</select></label>
         ${pitchPreviewHTML(team, formationId, assign)}
         <div class="section-title" style="margin:12px 0 6px"><h2 style="font-size:15px">المراكز</h2></div>
-        ${slotRows}`;
+        ${slotRows}
+        ${lineupCardsHTML(fixtureId, teamId)}`;
       $("#lu-formation", body).onchange = (e) => { formationId = e.target.value; renderBody(); };
       body.querySelectorAll("[data-slot]").forEach((sel) => {
         sel.onchange = () => {
@@ -1085,6 +1178,13 @@
           if (pid) assign[i] = pid; else delete assign[i];
           renderBody();
         };
+      });
+      // بطاقات المباراة: تفعيل (رئيس الفريق) + فكّ القفل (المشرف)
+      body.querySelectorAll("[data-commit]").forEach((b) => {
+        b.onclick = () => openCommitCard(fixtureId, teamId, b.getAttribute("data-commit"), renderBody);
+      });
+      body.querySelectorAll("[data-uncommit]").forEach((b) => {
+        b.onclick = () => { App.uncommitCard(teamId, b.getAttribute("data-uncommit")); renderBody(); };
       });
     }
     renderBody();
@@ -1382,6 +1482,201 @@
     });
   }
 
+  /* =========================================================
+     البطاقات المميّزة — واجهة المشرف (المكتبة + التنزيل + المخزون)
+     ========================================================= */
+  const cardStatusText = { owned: "متاحة", committed: "مفعّلة 🔒", consumed: "مُستخدمة" };
+
+  // شارة بطاقة مصغّرة (أيقونة + اسم + أثر)
+  function cardBadgeHTML(card, opts) {
+    opts = opts || {};
+    const eff = App.cardEffect(card.eff);
+    const vt = App.cardValueText(card);
+    const sub = (eff ? eff.label : "") + (vt ? " " + vt : "");
+    return `<div class="card" style="padding:10px${opts.dim ? ";opacity:.55" : ""}">
+      <div class="row" style="gap:10px;align-items:flex-start">
+        <span style="font-size:26px;line-height:1">${esc(card.icon || "🃏")}</span>
+        <div style="flex:1;min-width:0">
+          <div class="row between" style="gap:6px">
+            <b style="font-size:14px">${esc(card.name)}</b>
+            ${opts.rightHTML || ""}
+          </div>
+          <div class="small" style="color:var(--gold)">${esc(sub)}</div>
+          ${card.desc ? `<div class="small muted" style="margin-top:3px">${esc(card.desc)}</div>` : ""}
+          ${opts.footHTML || ""}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function viewCards() {
+    if (!isAdmin())
+      return `<div class="empty"><div class="big">🃏</div>هذه الصفحة للمشرف فقط.</div>`;
+    const lib = App.cardLibrary();
+
+    // 1) المكتبة — تنزيل بالمزاد + تفعيل/تعطيل + تعديل + حذف
+    const libHTML = lib.map((c) => {
+      const right = `<span class="chip ${c.enabled ? "" : "muted"}" style="font-size:11px">${c.enabled ? "مُفعّلة" : "معطّلة"}</span>`;
+      const foot = `<div class="row wrap" style="gap:6px;margin-top:8px">
+        <button class="btn sm gold" data-action="card-drop" data-id="${c.id}">⬇️ نزّل بالمزاد</button>
+        <button class="btn sm" data-action="card-toggle" data-id="${c.id}">${c.enabled ? "تعطيل" : "تفعيل"}</button>
+        <button class="btn sm ghost" data-action="card-edit" data-id="${c.id}">تعديل</button>
+        <button class="btn sm danger" data-action="card-del" data-id="${c.id}">حذف</button>
+      </div>`;
+      return cardBadgeHTML(c, { dim: !c.enabled, rightHTML: right, footHTML: foot });
+    }).join("");
+
+    // 2) مخزون كل فريق — إضافة/إزالة يدوية
+    const invHTML = App.state.teams.map((t) => {
+      const cards = App.teamCards(t.id);
+      const rows = cards.length
+        ? cards.map((ci) => {
+            const fx = ci.fixtureId ? App.getFixture(ci.fixtureId) : null;
+            const opp = fx ? App.getTeam(fx.homeTeamId === t.id ? fx.awayTeamId : fx.homeTeamId) : null;
+            const tgt = ci.targetPlayerId ? App.getPlayer(ci.targetPlayerId) : null;
+            const meta = [
+              cardStatusText[ci.status] || ci.status,
+              ci.status === "committed" && opp ? "ضد " + opp.name : "",
+              tgt ? "🎯 " + tgt.name : "",
+            ].filter(Boolean).join(" • ");
+            return `<div class="row between" style="padding:6px 0;border-bottom:1px solid var(--line);gap:8px">
+              <span style="flex:1;min-width:0">${esc(ci.icon)} <b>${esc(ci.name)}</b> <span class="small muted">${esc(meta)}</span></span>
+              ${ci.status === "committed" ? `<button class="btn sm ghost" data-action="card-uncommit" data-id="${t.id}::${ci.iid}">🔓 فكّ</button>` : ""}
+              <button class="btn sm danger" data-action="card-remove" data-id="${t.id}::${ci.iid}">×</button>
+            </div>`;
+          }).join("")
+        : `<div class="small muted" style="padding:6px 0">لا بطاقات</div>`;
+      return `<div class="card">
+        <div class="row between" style="margin-bottom:6px">
+          <b style="color:${t.color}">${esc(t.name)}</b>
+          <button class="btn sm primary" data-action="card-grant" data-id="${t.id}">＋ منح بطاقة</button>
+        </div>
+        ${rows}
+      </div>`;
+    }).join("");
+
+    return `<div class="section-title"><h2>🃏 البطاقات المميّزة</h2><span class="hint">مكتبة الأوراق • تنزيلها في المزاد • مخزون الفرق</span></div>
+      <div class="card" style="background:#0e1830">
+        <p class="muted small" style="margin:0">نزّل أي بطاقة في المزاد وتحكّم بمدّتها وسعر بدايتها. الفريق الفائز تدخل بطاقته مخزونه،
+        ويفعّلها رئيسه من شاشة التشكيلة (تأكيد ثم قفل)، فيُطبَّق أثرها تلقائيًا عند تسجيل تلك المباراة.</p>
+      </div>
+      <div class="section-title" style="margin:14px 0 8px"><h2 style="font-size:15px">المكتبة</h2>
+        <div class="spacer"></div>
+        <button class="btn sm primary" data-action="card-add">＋ بطاقة مخصّصة</button>
+      </div>
+      <div class="grid cols-2">${libHTML || '<div class="muted small">لا بطاقات في المكتبة</div>'}</div>
+      <div class="section-title" style="margin:16px 0 8px"><h2 style="font-size:15px">مخزون الفرق</h2><span class="hint">تحكّم كامل — أضف أو انقص</span></div>
+      <div class="grid cols-2">${invHTML}</div>`;
+  }
+
+  // خيارات أنواع الأثر (لمحرّر البطاقة المخصّصة)
+  function effectOptions(sel) {
+    return App.CARD_EFFECTS.map(
+      (e) => `<option value="${e.key}" ${e.key === sel ? "selected" : ""}>${esc(e.label)}</option>`
+    ).join("");
+  }
+
+  // نافذة: تنزيل بطاقة في المزاد (مدّة + سعر بداية)
+  function openDropCardModal(cardId) {
+    const card = App.getCard(cardId);
+    if (!card) return toast("بطاقة غير موجودة", "err");
+    const mk = App.state.market;
+    const liveNote = mk && mk.active
+      ? (mk.started ? "المزاد جارٍ — ستُضاف البطاقة لطابور العرض." : "المزاد في مرحلة التحضير — ستُضاف لقائمة السوق.")
+      : "لا يوجد مزاد نشط — سيُفتح مزاد للبطاقة ويبدأ فورًا.";
+    const body = `
+      ${cardBadgeHTML(card, {})}
+      <div class="grid cols-2" style="margin-top:10px">
+        <label class="field"><span>سعر بداية المزايدة</span>
+          <input id="drop-price" type="number" step="${App.MARKET_BID_STEP}" min="0" value="${App.MARKET_MIN_BID}"></label>
+        <label class="field"><span>مدّة العرض (ثانية)</span>
+          <input id="drop-dur" type="number" min="5" step="5" value="${Math.round(App.AUCTION_DURATION_MS / 1000)}"></label>
+      </div>
+      <div class="small muted">${esc(liveNote)}</div>`;
+    modal({
+      title: "تنزيل بطاقة في المزاد",
+      body,
+      foot: `<button class="btn gold" data-save>⬇️ نزّل بالمزاد</button><button class="btn ghost" data-close>إلغاء</button>`,
+      onOpen(root, close) {
+        $("[data-save]", root).onclick = () => {
+          const startPrice = parseInt($("#drop-price", root).value, 10) || App.MARKET_MIN_BID;
+          const durationSec = parseInt($("#drop-dur", root).value, 10) || Math.round(App.AUCTION_DURATION_MS / 1000);
+          const res = App.addCardLot(cardId, { startPrice, durationSec });
+          if (!res.ok) return toast(res.msg, "err");
+          toast(res.msg || "نُزّلت البطاقة", "ok");
+          close();
+          go("market");
+        };
+      },
+    });
+  }
+
+  // نافذة: إضافة/تعديل بطاقة في المكتبة
+  function openCardEditor(card) {
+    const isEdit = !!card;
+    const c = card || { icon: "🃏", name: "", desc: "", eff: "grantMoney", val: 1_000_000 };
+    const body = `
+      <div class="grid cols-2">
+        <label class="field"><span>الأيقونة (إيموجي)</span><input id="cd-icon" value="${esc(c.icon)}" maxlength="4"></label>
+        <label class="field"><span>الاسم</span><input id="cd-name" value="${esc(c.name)}" placeholder="اسم البطاقة"></label>
+      </div>
+      <label class="field"><span>الوصف</span><input id="cd-desc" value="${esc(c.desc || "")}" placeholder="وصف مختصر للأثر"></label>
+      <div class="grid cols-2">
+        <label class="field"><span>الأثر</span><select id="cd-eff">${effectOptions(c.eff)}</select></label>
+        <label class="field"><span>القيمة</span><input id="cd-val" type="number" value="${c.val}"></label>
+      </div>
+      <div class="small muted" id="cd-hint">${esc(App.cardEffect(c.eff)?.hint || "")}</div>`;
+    modal({
+      title: isEdit ? "تعديل بطاقة" : "بطاقة مخصّصة جديدة",
+      body,
+      foot: `<button class="btn primary" data-save>حفظ</button><button class="btn ghost" data-close>إلغاء</button>`,
+      onOpen(root, close) {
+        const hint = $("#cd-hint", root);
+        $("#cd-eff", root).onchange = (e) => { hint.textContent = App.cardEffect(e.target.value)?.hint || ""; };
+        $("[data-save]", root).onclick = () => {
+          const data = {
+            icon: $("#cd-icon", root).value,
+            name: $("#cd-name", root).value,
+            desc: $("#cd-desc", root).value,
+            eff: $("#cd-eff", root).value,
+            val: parseInt($("#cd-val", root).value, 10) || 0,
+          };
+          if (isEdit) { App.updateLibraryCard(card.id, data); toast("حُفظت البطاقة", "ok"); }
+          else { const res = App.addLibraryCard(data); if (!res.ok) return toast(res.msg, "err"); toast("أُضيفت البطاقة", "ok"); }
+          close();
+          render();
+        };
+      },
+    });
+  }
+
+  // نافذة: منح بطاقة لفريق يدويًا (المشرف)
+  function openGrantCardModal(teamId) {
+    const team = App.getTeam(teamId);
+    if (!team) return toast("فريق غير موجود", "err");
+    const lib = App.cardLibrary();
+    if (!lib.length) return toast("لا بطاقات في المكتبة", "err");
+    const body = `
+      <label class="field"><span>البطاقة</span>
+        <select id="grant-card">${lib.map((c) => `<option value="${c.id}">${esc(c.icon)} ${esc(c.name)} — ${esc(App.cardEffect(c.eff)?.label || "")} ${esc(App.cardValueText(c))}</option>`).join("")}</select>
+      </label>
+      <div class="small muted">تُضاف البطاقة مباشرة لمخزون ${esc(team.name)}.</div>`;
+    modal({
+      title: "منح بطاقة لـ " + team.name,
+      body,
+      foot: `<button class="btn primary" data-save>منح</button><button class="btn ghost" data-close>إلغاء</button>`,
+      onOpen(root, close) {
+        $("[data-save]", root).onclick = () => {
+          const res = App.grantCard(teamId, $("#grant-card", root).value);
+          if (!res.ok) return toast(res.msg, "err");
+          toast("مُنحت البطاقة", "ok");
+          close();
+          render();
+        };
+      },
+    });
+  }
+
   const VIEWS = {
     dashboard: viewDashboard,
     teams: viewTeams,
@@ -1391,6 +1686,7 @@
     market: viewMarket,
     ledger: viewLedger,
     lineups: viewLineups,
+    cards: viewCards,
     auction: viewAuctionScreen,
   };
   // مسارات تُعرض بملء الشاشة (بدون الشريط العلوي/السفلي) — مناسبة للعرض على شاشة كبيرة
@@ -1473,6 +1769,7 @@
     "edit-team", "adjust-budget", "add-week-event", "del-week-event", "open-market-random", "open-market-manual", "finalize-lot",
     "start-market", "close-market", "auction-screen", "export", "import",
     "add-fixture", "edit-fixture", "del-fixture", "fixture-done",
+    "card-drop", "card-toggle", "card-edit", "card-del", "card-add", "card-grant", "card-remove", "card-uncommit",
   ]);
 
   // غلاف يلتقط أي خطأ أثناء تنفيذ الإجراء (مثل فتح نافذة) فيُظهره كرسالة
@@ -1578,6 +1875,22 @@
       case "export-lineup": {
         const [fid, tid] = String(id).split("::");
         return exportLineupPNG(fid, tid || myTeamId());
+      }
+      // البطاقات المميّزة (المشرف)
+      case "card-drop": return openDropCardModal(id);
+      case "card-toggle": App.toggleLibraryCard(id); return render();
+      case "card-edit": return openCardEditor(App.getCard(id));
+      case "card-del":
+        return confirmBox("حذف هذه البطاقة من المكتبة؟ (لا يؤثّر على البطاقات المملوكة للفرق)", () => { App.deleteLibraryCard(id); toast("حُذفت"); render(); }, true);
+      case "card-add": return openCardEditor(null);
+      case "card-grant": return openGrantCardModal(id);
+      case "card-remove": {
+        const [tid, iid] = String(id).split("::");
+        return confirmBox("إزالة هذه البطاقة من مخزون الفريق؟", () => { App.removeCardInstance(tid, iid); toast("أُزيلت"); render(); }, true);
+      }
+      case "card-uncommit": {
+        const [tid, iid] = String(id).split("::");
+        App.uncommitCard(tid, iid); toast("فُكّ قفل البطاقة", "ok"); return render();
       }
     }
   }

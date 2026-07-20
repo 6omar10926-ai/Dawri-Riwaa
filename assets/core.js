@@ -161,6 +161,46 @@
   App.START_BUDGET = 20_000_000;
   const OLD_DEFAULT_TEAM_NAMES = /^الفريق (الأول|الثاني|الثالث)$/;
 
+  /* ---------- البطاقات المميّزة (Special Cards) ----------
+     كل بطاقة لها "أثر" (effect) يُطبَّق تلقائيًا عند تسجيل المباراة.
+     المشرف ينزّل البطاقة في المزاد، الفريق الفائز يملكها في مخزونه،
+     ورئيس الفريق يفعّلها من شاشة التشكيلة (تأكيد ثم قفل)، فيُطبَّق أثرها
+     تلقائيًا حين تُسجَّل تلك المباراة. */
+  // أنواع الآثار القابلة للأتمتة. valueKind يحدّد معنى "القيمة":
+  //   money = مبلغ • rating = نقاط تقييم • count = عدد • none = بلا قيمة
+  // scope = self (على فريقك) | opponent (على الخصم)
+  // needsTarget = ownPlayer (يلزم اختيار لاعب من فريقك) | null
+  App.CARD_EFFECTS = [
+    { key: "doubleGoal",     label: "هدف مضاعف",       valueKind: "none",   scope: "self",     needsTarget: null,        hint: "أحد أهدافك في المباراة يُحتسب هدفين في النتيجة." },
+    { key: "winMultiplier",  label: "مضاعفة الفوز",     valueKind: "count",  scope: "self",     needsTarget: null,        hint: "تُضاف مكافأة الفوز عددًا إضافيًا من المرات (1 = تتضاعف)." },
+    { key: "drawMultiplier", label: "مضاعفة التعادل",   valueKind: "count",  scope: "self",     needsTarget: null,        hint: "تُضاف مكافأة التعادل عددًا إضافيًا من المرات." },
+    { key: "cancelGoalOpp",  label: "إلغاء هدف للخصم",  valueKind: "count",  scope: "opponent", needsTarget: null,        hint: "يُخصم العدد من رصيد أهداف الخصم في النتيجة." },
+    { key: "cancelCard",     label: "إلغاء خصم كرت",    valueKind: "count",  scope: "self",     needsTarget: null,        hint: "يُلغى الخصم المالي لهذا العدد من الكروت (أصفر/أحمر)." },
+    { key: "cancelNutmeg",   label: "إلغاء تسطيح",      valueKind: "count",  scope: "self",     needsTarget: null,        hint: "يُلغى الخصم المالي لهذا العدد من التسطيحات." },
+    { key: "grantMoney",     label: "منحة مالية",       valueKind: "money",  scope: "self",     needsTarget: null,        hint: "يُضاف المبلغ لميزانية فريقك." },
+    { key: "fineOpponent",   label: "غرامة على الخصم",  valueKind: "money",  scope: "opponent", needsTarget: null,        hint: "يُخصم المبلغ من ميزانية الخصم." },
+    { key: "boostRating",    label: "رفع تقييم لاعب",   valueKind: "rating", scope: "self",     needsTarget: "ownPlayer", hint: "تُضاف النقاط لتقييم لاعب تختاره من فريقك." },
+  ];
+  App.cardEffect = (key) => App.CARD_EFFECTS.find((e) => e.key === key) || null;
+
+  // مكتبة البطاقات الافتراضية (يديرها المشرف: تعديل/تعطيل/إضافة/حذف).
+  App.DEFAULT_CARD_LIBRARY = [
+    { id: "c_double_goal",  icon: "🎯",  name: "الهدف بهدفين",   eff: "doubleGoal",     val: 0,         desc: "أحد أهدافك في هذه المباراة يُحتسب هدفين في النتيجة." },
+    { id: "c_win_x2",       icon: "✖️2", name: "مضاعفة الفوز",    eff: "winMultiplier",  val: 1,         desc: "مكافأة الفوز في هذه المباراة تتضاعف." },
+    { id: "c_draw_x2",      icon: "🤝",  name: "مضاعفة التعادل",  eff: "drawMultiplier", val: 1,         desc: "مكافأة التعادل في هذه المباراة تتضاعف." },
+    { id: "c_cancel_goal",  icon: "🛡️", name: "إلغاء هدف الخصم", eff: "cancelGoalOpp",  val: 1,         desc: "يُلغى هدف واحد من رصيد الخصم في هذه المباراة." },
+    { id: "c_immune_card",  icon: "🧯",  name: "حصانة كرت",       eff: "cancelCard",     val: 1,         desc: "يُلغى الخصم المالي لكرت (أصفر/أحمر) واحد على فريقك." },
+    { id: "c_cancel_nut",   icon: "🩹",  name: "إلغاء تسطيح",     eff: "cancelNutmeg",   val: 1,         desc: "يُلغى الخصم المالي لتسطيح واحد على فريقك." },
+    { id: "c_grant",        icon: "💵",  name: "منحة مالية",      eff: "grantMoney",     val: 2_000_000, desc: "دعم مالي فوري يُضاف لميزانية فريقك." },
+    { id: "c_fine",         icon: "💸",  name: "غرامة الخصم",     eff: "fineOpponent",   val: 2_000_000, desc: "تُخصم غرامة من ميزانية الخصم في هذه المباراة." },
+    { id: "c_boost5",       icon: "🚀",  name: "ترقية لاعب",      eff: "boostRating",    val: 5,         desc: "+5 لتقييم لاعب تختاره من فريقك في هذه المباراة." },
+    { id: "c_boost3",       icon: "💫",  name: "نجم المباراة",    eff: "boostRating",    val: 3,         desc: "+3 لتقييم لاعب تختاره من فريقك." },
+    { id: "c_boost1",       icon: "➕",  name: "نقطة إضافية",     eff: "boostRating",    val: 1,         desc: "+1 لتقييم لاعب تختاره من فريقك." },
+  ];
+  const defaultCardLibrary = () =>
+    App.DEFAULT_CARD_LIBRARY.map((c) => Object.assign({ enabled: true }, c));
+  App.defaultCardLibrary = defaultCardLibrary;
+
   function defaultState() {
     const teams = TEAM_IDENTITIES.map((idn) => ({
       id: uid(),
@@ -170,6 +210,7 @@
       code: idn.code,
       budget: App.START_BUDGET,
       captainId: null,
+      cards: [], // مخزون البطاقات المميّزة التي يملكها الفريق
     }));
     return {
       version: 1,
@@ -188,6 +229,7 @@
       market: { active: false, week: 1, lots: [] },
       marketHistory: [], // أرشيف الأسواق المغلقة مع صفقاتها
       weekEvents: [], // أحداث يدوية لكل أسبوع {id,week,text,date}
+      cardLibrary: defaultCardLibrary(), // مكتبة البطاقات المميّزة (يديرها المشرف)
     };
   }
   App.defaultState = defaultState;
@@ -274,6 +316,18 @@
     if (s.market.active && !s.market.lots.length) s.market.active = false;
     s.marketHistory = Array.isArray(s.marketHistory) ? s.marketHistory : [];
     s.weekEvents = Array.isArray(s.weekEvents) ? s.weekEvents : [];
+    // البطاقات المميّزة: مكتبة على مستوى الحالة + مخزون لكل فريق
+    if (!Array.isArray(s.cardLibrary) || !s.cardLibrary.length) {
+      s.cardLibrary = defaultCardLibrary();
+    } else {
+      // أضف أي بطاقات افتراضية جديدة غير موجودة (دون المساس بتعديلات المستخدم)
+      const have = new Set(s.cardLibrary.map((c) => c.id));
+      App.DEFAULT_CARD_LIBRARY.forEach((c) => {
+        if (!have.has(c.id)) s.cardLibrary.push(Object.assign({ enabled: true }, c));
+      });
+      s.cardLibrary.forEach((c) => { if (typeof c.enabled !== "boolean") c.enabled = true; });
+    }
+    (s.teams || []).forEach((t) => { if (!Array.isArray(t.cards)) t.cards = []; });
     return s;
   }
   function saveLocal() {
@@ -567,7 +621,10 @@
         else if (ev.teamId === match.awayTeamId) home++;
       }
     });
-    return { home, away };
+    const score = { home, away };
+    // أثر البطاقات على النتيجة (هدف مضاعف / إلغاء هدف للخصم)
+    applyCardScoreDeltas(match, score);
+    return score;
   }
   App.computeMatchScores = computeMatchScores;
 
@@ -616,6 +673,8 @@
       const winnerId = match.result === "home" ? match.homeTeamId : match.awayTeamId;
       addTransaction(winnerId, rules.win, "فوز بالمباراة", { refType: "match", refId: id });
     }
+    // فلوس البطاقات المفعّلة (منحة/غرامة/مضاعفة/إلغاء خصم)
+    applyCardFinancials(match);
   }
 
   function recordMatch(match) {
@@ -623,11 +682,15 @@
     match.id = id;
     match.date = match.date || new Date().toISOString();
     match.week = match.week || App.state.club.week;
+    // اجمع أثر البطاقات المفعّلة لهذه المباراة قبل الحساب
+    match.cardsApplied = App.collectMatchCards(match);
     computeMatchMeta(match);
     applyMatchFinancials(match);
     App.state.matches.push(match);
     // تحديث تقييمات اللاعبين من أحداث المباراة (إدخال واحد → نتيجة + تقييم)
     applyMatchRatings(match);
+    applyCardRatings(match);
+    consumeMatchCards(match); // البطاقات المستخدَمة تُستهلك
     save();
     return match;
   }
@@ -639,14 +702,18 @@
     if (!match) return null;
     reverseByRef("match", id);
     reverseMatchRatings(id);
+    releaseMatchCards(id); // أرجع بطاقات المباراة إلى "مفعّلة" لإعادة تطبيقها
     if (data.homeTeamId) match.homeTeamId = data.homeTeamId;
     if (data.awayTeamId) match.awayTeamId = data.awayTeamId;
     if (data.events) match.events = data.events;
     if (typeof data.note === "string") match.note = data.note;
     if (data.week) match.week = parseInt(data.week, 10) || match.week;
+    match.cardsApplied = App.collectMatchCards(match);
     computeMatchMeta(match);
     applyMatchFinancials(match);
     applyMatchRatings(match);
+    applyCardRatings(match);
+    consumeMatchCards(match);
     save();
     return match;
   }
@@ -655,6 +722,7 @@
   function deleteMatch(id) {
     reverseByRef("match", id);
     reverseMatchRatings(id);
+    releaseMatchCards(id); // البطاقات تعود مفعّلة (المباراة لم تُسجَّل)
     App.state.matches = App.state.matches.filter((m) => m.id !== id);
     save();
   }
@@ -742,7 +810,8 @@
   App.marketTeamPurchases = function (teamId, mk) {
     mk = mk || App.state.market;
     if (!mk || !Array.isArray(mk.lots)) return 0;
-    return mk.lots.filter((l) => l.status === "sold" && l.winnerTeamId === teamId).length;
+    // البطاقات لا تُحتسب ضمن حد شراء اللاعبين
+    return mk.lots.filter((l) => l.status === "sold" && l.winnerTeamId === teamId && l.type !== "card").length;
   };
   App.marketMaxPerTeam = function (mk) {
     mk = mk || App.state.market;
@@ -753,11 +822,14 @@
     return App.marketTeamPurchases(teamId, mk) >= App.marketMaxPerTeam(mk);
   };
 
-  // يضبط وقت انتهاء مؤقّت اللاعب الحالي (أو يُفرغه لو انتهى السوق)
+  // يضبط وقت انتهاء مؤقّت اللاعب/البطاقة الحالية (أو يُفرغه لو انتهى السوق).
+  // كل عنصر قد يحمل مدّته الخاصّة (durationMs) — البطاقات ينزّلها المشرف بمدّة يختارها.
   function armLotTimer() {
     const mk = App.state.market;
     const lot = mk.lots[mk.currentIndex];
-    mk.endsAt = lot && lot.status === "open" ? Date.now() + App.AUCTION_DURATION_MS : null;
+    mk.endsAt = lot && lot.status === "open"
+      ? Date.now() + (typeof lot.durationMs === "number" ? lot.durationMs : App.AUCTION_DURATION_MS)
+      : null;
   }
 
   // بدء المزاد: يذهب لأول لاعب مفتوح ويشغّل مؤقّته
@@ -794,10 +866,12 @@
   App.MARKET_MIN_BID = 1_000_000;
   App.MARKET_BID_STEP = 200_000;
 
-  // أقل مزايدة مسموحة للاعب: أول مزايدة = الحد الأدنى، وما بعدها = الأعلى + الخطوة
+  // أقل مزايدة مسموحة: أول مزايدة = سعر البداية (البطاقات يحدّده المشرف) أو الحد الأدنى،
+  // وما بعدها = الأعلى + الخطوة
   App.marketMinBid = function (lot) {
     const highest = lot && lot.bids && lot.bids.length ? lot.bids[lot.bids.length - 1].amount : 0;
-    return highest ? highest + App.MARKET_BID_STEP : App.MARKET_MIN_BID;
+    if (highest) return highest + App.MARKET_BID_STEP;
+    return lot && typeof lot.startPrice === "number" ? lot.startPrice : App.MARKET_MIN_BID;
   };
 
   function placeBid(lotId, teamId, amount) {
@@ -808,11 +882,11 @@
     // المزايدة على اللاعب المعروض حاليًا فقط
     const current = mk.lots[mk.currentIndex];
     if (current && current.id !== lot.id)
-      return { ok: false, msg: "هذا ليس اللاعب المعروض حاليًا" };
+      return { ok: false, msg: "هذا ليس المعروض حاليًا" };
     const team = App.getTeam(teamId);
     if (!team) return { ok: false, msg: "فريق غير موجود" };
-    // حد الفريق: لا يشتري أكثر من العدد المسموح في الجولة
-    if (App.marketTeamAtCap(teamId, mk))
+    // حد الفريق: لا يشتري أكثر من العدد المسموح من اللاعبين في الجولة (لا يشمل البطاقات)
+    if (lot.type !== "card" && App.marketTeamAtCap(teamId, mk))
       return { ok: false, msg: "الفريق استنفد نصيبه (" + App.marketMaxPerTeam(mk) + " لاعبين) في هذه الجولة" };
     const step = App.MARKET_BID_STEP;
     const minAllowed = App.marketMinBid(lot);
@@ -851,17 +925,26 @@
       lot.status = "unsold";
     } else {
       const top = lot.bids[lot.bids.length - 1];
-      const player = App.getPlayer(lot.playerId);
       lot.status = "sold";
       lot.winnerTeamId = top.teamId;
       lot.finalPrice = top.amount;
-      // خصم الثمن من المشتري فقط — القيمة "تختفي" ولا تُضاف لأي فريق (حتى لو كان
-      // اللاعب مملوكًا لفريق آخر، فريقه السابق لا يحصل على شيء).
-      addTransaction(top.teamId, -top.amount, "شراء لاعب: " + (player ? player.name : ""), {
-        refType: "transfer",
-        refId: lot.id,
-      });
-      if (player) player.teamId = top.teamId;
+      if (lot.type === "card") {
+        // بطاقة مميّزة: تُخصم القيمة وتدخل مخزون الفريق الفائز
+        addTransaction(top.teamId, -top.amount, "شراء بطاقة: " + (lot.cardSnap ? lot.cardSnap.name : ""), {
+          refType: "transfer",
+          refId: lot.id,
+        });
+        grantCardFromSnap(top.teamId, lot.cardId, lot.cardSnap);
+      } else {
+        const player = App.getPlayer(lot.playerId);
+        // خصم الثمن من المشتري فقط — القيمة "تختفي" ولا تُضاف لأي فريق (حتى لو كان
+        // اللاعب مملوكًا لفريق آخر، فريقه السابق لا يحصل على شيء).
+        addTransaction(top.teamId, -top.amount, "شراء لاعب: " + (player ? player.name : ""), {
+          refType: "transfer",
+          refId: lot.id,
+        });
+        if (player) player.teamId = top.teamId;
+      }
     }
     advanceMarket(idx);
     if (mk.started) armLotTimer(); // ابدأ مؤقّت اللاعب التالي (أو أفرغه لو انتهى السوق)
@@ -886,11 +969,15 @@
     const deals = mk.lots
       .filter((l) => l.status === "sold")
       .map((l) => {
-        const p = App.getPlayer(l.playerId);
+        const isCard = l.type === "card";
+        const p = isCard ? null : App.getPlayer(l.playerId);
         const t = App.getTeam(l.winnerTeamId);
         return {
-          playerId: l.playerId,
-          playerName: p ? p.name : "لاعب محذوف",
+          playerId: l.playerId || null,
+          isCard,
+          playerName: isCard
+            ? "🃏 " + (l.cardSnap ? l.cardSnap.name : "بطاقة")
+            : p ? p.name : "لاعب محذوف",
           teamId: l.winnerTeamId,
           teamName: t ? t.name : "",
           teamColor: t ? t.color : "#888",
@@ -923,11 +1010,15 @@
     // السوق الحالي يُحتسب فقط إن لم يُؤرشَف بعد (وإلا ازدواج مع الأرشيف)
     if (mk && !mk.archived && mk.week === week && Array.isArray(mk.lots)) {
       mk.lots.filter((l) => l.status === "sold").forEach((l) => {
-        const p = App.getPlayer(l.playerId);
+        const isCard = l.type === "card";
+        const p = isCard ? null : App.getPlayer(l.playerId);
         const t = App.getTeam(l.winnerTeamId);
         out.push({
-          playerId: l.playerId,
-          playerName: p ? p.name : "لاعب محذوف",
+          playerId: l.playerId || null,
+          isCard,
+          playerName: isCard
+            ? "🃏 " + (l.cardSnap ? l.cardSnap.name : "بطاقة")
+            : p ? p.name : "لاعب محذوف",
           teamId: l.winnerTeamId,
           teamName: t ? t.name : "",
           teamColor: t ? t.color : "#888",
@@ -940,6 +1031,343 @@
     });
     return out.sort((a, b) => b.price - a.price);
   };
+
+  /* =============================================================
+     البطاقات المميّزة — المكتبة + المخزون + التفعيل + محرّك الأثر
+     ============================================================= */
+
+  /* ---------- مكتبة البطاقات (يديرها المشرف) ---------- */
+  App.cardLibrary = () => App.state.cardLibrary || [];
+  App.getCard = (id) => (App.state.cardLibrary || []).find((c) => c.id === id) || null;
+  App.enabledCards = () => (App.state.cardLibrary || []).filter((c) => c.enabled);
+
+  // إضافة/تعديل بطاقة في المكتبة. يقبل {icon,name,desc,eff,val}
+  App.addLibraryCard = function (data) {
+    data = data || {};
+    const name = (data.name || "").trim();
+    if (!name) return { ok: false, msg: "اكتب اسم البطاقة" };
+    if (!App.cardEffect(data.eff)) return { ok: false, msg: "اختر أثرًا صحيحًا" };
+    App.state.cardLibrary.push({
+      id: "cc_" + uid(),
+      icon: (data.icon || "🃏").trim() || "🃏",
+      name,
+      desc: (data.desc || "").trim(),
+      eff: data.eff,
+      val: Math.round(Number(data.val) || 0),
+      enabled: true,
+      custom: true,
+    });
+    save();
+    return { ok: true };
+  };
+  App.updateLibraryCard = function (id, patch) {
+    const c = App.getCard(id);
+    if (!c) return;
+    if (typeof patch.icon === "string" && patch.icon.trim()) c.icon = patch.icon.trim();
+    if (typeof patch.name === "string" && patch.name.trim()) c.name = patch.name.trim();
+    if (typeof patch.desc === "string") c.desc = patch.desc.trim();
+    if (patch.eff && App.cardEffect(patch.eff)) c.eff = patch.eff;
+    if (patch.val !== undefined) c.val = Math.round(Number(patch.val) || 0);
+    if (typeof patch.enabled === "boolean") c.enabled = patch.enabled;
+    save();
+  };
+  App.toggleLibraryCard = function (id) {
+    const c = App.getCard(id);
+    if (!c) return;
+    c.enabled = !c.enabled;
+    save();
+  };
+  App.deleteLibraryCard = function (id) {
+    App.state.cardLibrary = (App.state.cardLibrary || []).filter((c) => c.id !== id);
+    save();
+  };
+
+  // وصف مقروء لقيمة الأثر (يُستخدم في الواجهة)
+  App.cardValueText = function (card) {
+    const eff = App.cardEffect(card && card.eff);
+    if (!eff) return "";
+    if (eff.valueKind === "money") return fmtShort(card.val);
+    if (eff.valueKind === "rating") return "+" + card.val;
+    if (eff.valueKind === "count") return "×" + card.val;
+    return "";
+  };
+
+  /* ---------- تنزيل بطاقة في المزاد (المشرف) ----------
+     المشرف يتحكّم بمدّة العرض (durationSec) وسعر بداية المزايدة (startPrice). */
+  function grantCardFromSnap(teamId, cardId, snap) {
+    const team = App.getTeam(teamId);
+    if (!team || !snap) return null;
+    if (!Array.isArray(team.cards)) team.cards = [];
+    const inst = {
+      iid: "ci_" + uid(),
+      cardId: cardId || null,
+      icon: snap.icon,
+      name: snap.name,
+      desc: snap.desc,
+      eff: snap.eff,
+      val: snap.val,
+      status: "owned",       // owned | committed | consumed
+      fixtureId: null,
+      targetPlayerId: null,
+      matchId: null,
+      at: new Date().toISOString(),
+    };
+    team.cards.push(inst);
+    return inst;
+  }
+  App.grantCardFromSnap = grantCardFromSnap;
+
+  // منح بطاقة من المكتبة لفريق مباشرة (يستخدمه المشرف من إدارة المخزون)
+  App.grantCard = function (teamId, cardId) {
+    const lib = App.getCard(cardId);
+    if (!lib) return { ok: false, msg: "بطاقة غير موجودة" };
+    const inst = grantCardFromSnap(teamId, cardId, lib);
+    if (!inst) return { ok: false, msg: "فريق غير موجود" };
+    save();
+    return { ok: true };
+  };
+
+  // إزالة نسخة بطاقة من مخزون فريق (المشرف)
+  App.removeCardInstance = function (teamId, iid) {
+    const team = App.getTeam(teamId);
+    if (!team || !Array.isArray(team.cards)) return;
+    team.cards = team.cards.filter((c) => c.iid !== iid);
+    save();
+  };
+
+  App.snapOf = (lib) => ({ icon: lib.icon, name: lib.name, desc: lib.desc, eff: lib.eff, val: lib.val });
+
+  // ينزّل بطاقة (بلقطة من المكتبة) في المزاد الحالي كعنصر مستقل بمدّته وسعره
+  App.addCardLot = function (cardId, opts) {
+    opts = opts || {};
+    const lib = App.getCard(cardId);
+    if (!lib) return { ok: false, msg: "بطاقة غير موجودة" };
+    const startPrice = Math.max(0, Math.round(Number(opts.startPrice) || App.MARKET_MIN_BID));
+    const durationSec = Math.max(5, Math.round(Number(opts.durationSec) || App.AUCTION_DURATION_MS / 1000));
+    const lot = {
+      id: uid(),
+      type: "card",
+      cardId,
+      cardSnap: App.snapOf(lib),
+      bids: [],
+      status: "open",
+      winnerTeamId: null,
+      finalPrice: 0,
+      startPrice,
+      durationMs: durationSec * 1000,
+    };
+    let mk = App.state.market;
+    if (!mk || !mk.active) {
+      // لا يوجد سوق نشط → افتح سوقًا حيًّا يحوي هذه البطاقة وابدأه فورًا
+      archiveMarket(App.state.market);
+      mk = App.state.market = {
+        id: uid(),
+        active: true,
+        started: true,
+        archived: false,
+        week: App.state.club.week,
+        currentIndex: 0,
+        endsAt: null,
+        maxPerTeam: App.MARKET_MAX_PER_TEAM,
+        lots: [lot],
+      };
+      armLotTimer();
+      save();
+      return { ok: true, msg: "فُتح مزاد للبطاقة وبدأ فورًا" };
+    }
+    mk.lots.push(lot);
+    // لو المزاد بدأ ولا يوجد عنصر معروض الآن (انتهى الطابور) → اجعل البطاقة هي الحالية
+    if (mk.started) {
+      const cur = mk.lots[mk.currentIndex];
+      if (!cur || cur.status !== "open") {
+        const oi = mk.lots.findIndex((l) => l.status === "open");
+        mk.currentIndex = oi === -1 ? mk.lots.length : oi;
+        armLotTimer();
+      }
+    }
+    save();
+    return { ok: true, msg: mk.started ? "أُضيفت البطاقة لطابور المزاد" : "أُضيفت البطاقة لقائمة السوق" };
+  };
+
+  /* ---------- مخزون الفرق + الاستعلام ---------- */
+  App.teamCards = (teamId) => {
+    const t = App.getTeam(teamId);
+    return t && Array.isArray(t.cards) ? t.cards : [];
+  };
+  App.teamCardsByStatus = (teamId, status) =>
+    App.teamCards(teamId).filter((c) => c.status === status);
+  // البطاقات المفعّلة (المؤكّدة) لمباراة فريقٍ معيّنة
+  App.teamCommittedFor = (fixtureId, teamId) =>
+    App.teamCards(teamId).filter((c) => c.status === "committed" && c.fixtureId === fixtureId);
+  App.getCardInstance = (teamId, iid) =>
+    App.teamCards(teamId).find((c) => c.iid === iid) || null;
+
+  /* ---------- تفعيل البطاقات (رئيس الفريق) ----------
+     يختار رئيس الفريق بطاقاته لهذه المباراة ويؤكّد → تُقفل (committed)،
+     ولا يستطيع التراجع؛ المشرف وحده يفكّ القفل. */
+  App.commitCard = function (teamId, iid, fixtureId, opts) {
+    opts = opts || {};
+    const c = App.getCardInstance(teamId, iid);
+    if (!c) return { ok: false, msg: "البطاقة غير موجودة" };
+    if (c.status !== "owned") return { ok: false, msg: "لا يمكن تفعيل هذه البطاقة" };
+    if (!App.getFixture(fixtureId)) return { ok: false, msg: "المباراة غير موجودة" };
+    const eff = App.cardEffect(c.eff);
+    if (eff && eff.needsTarget === "ownPlayer") {
+      const p = App.getPlayer(opts.targetPlayerId);
+      if (!p || p.teamId !== teamId) return { ok: false, msg: "اختر لاعبًا من فريقك" };
+      c.targetPlayerId = opts.targetPlayerId;
+    }
+    c.status = "committed";
+    c.fixtureId = fixtureId;
+    save();
+    return { ok: true };
+  };
+  // فكّ قفل بطاقة مفعّلة (المشرف فقط) → تعود للمخزون
+  App.uncommitCard = function (teamId, iid) {
+    const c = App.getCardInstance(teamId, iid);
+    if (!c || c.status !== "committed") return;
+    c.status = "owned";
+    c.fixtureId = null;
+    c.targetPlayerId = null;
+    save();
+  };
+
+  /* ---------- محرّك أثر البطاقات (أتمتة كاملة) ----------
+     يُجمَع أثر البطاقات المفعّلة لفريقي المباراة، ويُطبَّق ضمن حساب
+     النتيجة/الفلوس/التقييم عند تسجيل المباراة، ويُعكَس عند التعديل/الحذف. */
+  function fixtureTeamsMatch(f, match) {
+    if (!f) return false;
+    return (
+      (f.homeTeamId === match.homeTeamId && f.awayTeamId === match.awayTeamId) ||
+      (f.homeTeamId === match.awayTeamId && f.awayTeamId === match.homeTeamId)
+    );
+  }
+  // يجمع البطاقات المفعّلة المرتبطة بهذه المباراة (لم تُستهلك بعد)
+  App.collectMatchCards = function (match) {
+    const out = [];
+    [match.homeTeamId, match.awayTeamId].forEach((teamId) => {
+      App.teamCards(teamId).forEach((c) => {
+        if (c.status !== "committed") return;
+        if (match.fixtureId) {
+          if (c.fixtureId !== match.fixtureId) return;
+        } else if (!fixtureTeamsMatch(App.getFixture(c.fixtureId), match)) {
+          return;
+        }
+        out.push({
+          teamId,
+          iid: c.iid,
+          eff: c.eff,
+          val: c.val,
+          name: c.name,
+          icon: c.icon,
+          targetPlayerId: c.targetPlayerId || null,
+        });
+      });
+    });
+    return out;
+  };
+
+  // تعديل النتيجة بأثر البطاقات (يُستدعى داخل computeMatchScores)
+  function applyCardScoreDeltas(match, score) {
+    (match.cardsApplied || []).forEach((c) => {
+      const isHome = c.teamId === match.homeTeamId;
+      if (c.eff === "doubleGoal") {
+        if (isHome && score.home >= 1) score.home += 1;
+        else if (!isHome && score.away >= 1) score.away += 1;
+      } else if (c.eff === "cancelGoalOpp") {
+        const n = Math.max(0, c.val || 0) || 1;
+        if (isHome) score.away = Math.max(0, score.away - n);
+        else score.home = Math.max(0, score.home - n);
+      }
+    });
+  }
+
+  // فلوس البطاقات (تُستدعى داخل applyMatchFinancials بعد ضبط النتيجة)
+  function applyCardFinancials(match) {
+    const rules = App.state.moneyRules;
+    const id = match.id;
+    (match.cardsApplied || []).forEach((c) => {
+      const team = c.teamId;
+      const opp = team === match.homeTeamId ? match.awayTeamId : match.homeTeamId;
+      const won =
+        (match.result === "home" && team === match.homeTeamId) ||
+        (match.result === "away" && team === match.awayTeamId);
+      if (c.eff === "grantMoney") {
+        addTransaction(team, c.val || 0, "بطاقة: " + c.name, { refType: "match", refId: id });
+      } else if (c.eff === "fineOpponent") {
+        addTransaction(opp, -(c.val || 0), "بطاقة: " + c.name + " (غرامة)", { refType: "match", refId: id });
+      } else if (c.eff === "winMultiplier") {
+        if (won) addTransaction(team, (rules.win || 0) * (c.val || 1), "بطاقة: " + c.name, { refType: "match", refId: id });
+      } else if (c.eff === "drawMultiplier") {
+        if (match.result === "draw") addTransaction(team, (rules.draw || 0) * (c.val || 1), "بطاقة: " + c.name, { refType: "match", refId: id });
+      } else if (c.eff === "cancelCard") {
+        let remaining = Math.max(1, c.val || 1);
+        match.events.forEach((ev) => {
+          if (remaining <= 0 || ev.teamId !== team) return;
+          if (ev.type === "yellow" || ev.type === "red") {
+            const amt = rules[ev.type] || 0;
+            if (amt < 0) { addTransaction(team, -amt, "بطاقة: " + c.name + " (إلغاء خصم كرت)", { refType: "match", refId: id }); remaining--; }
+          }
+        });
+      } else if (c.eff === "cancelNutmeg") {
+        let remaining = Math.max(1, c.val || 1);
+        match.events.forEach((ev) => {
+          if (remaining <= 0 || ev.teamId !== team) return;
+          if (ev.type === "nutmeg") {
+            const amt = rules.nutmeg || 0;
+            if (amt < 0) { addTransaction(team, -amt, "بطاقة: " + c.name + " (إلغاء تسطيح)", { refType: "match", refId: id }); remaining--; }
+          }
+        });
+      }
+    });
+  }
+
+  // تقييم البطاقات (تُستدعى داخل applyMatchRatings)
+  function applyCardRatings(match) {
+    (match.cardsApplied || []).forEach((c) => {
+      if (c.eff !== "boostRating" || !c.targetPlayerId || !c.val) return;
+      const p = App.getPlayer(c.targetPlayerId);
+      if (!p) return;
+      const week = match.week;
+      const oldRating = App.playerWeekRating(c.targetPlayerId, week);
+      App.state.ratingLog.push({
+        id: uid(),
+        playerId: c.targetPlayerId,
+        week,
+        date: new Date().toISOString(),
+        delta: c.val,
+        breakdown: [{ key: "card", label: "بطاقة: " + c.name, count: 1, pts: c.val, subtotal: c.val }],
+        note: "بطاقة: " + c.name,
+        matchId: match.id,
+      });
+      const newRating = App.playerWeekRating(c.targetPlayerId, week);
+      const last = App.state.ratingLog[App.state.ratingLog.length - 1];
+      last.oldRating = oldRating;
+      last.newRating = newRating;
+      last.applied = newRating - oldRating;
+    });
+  }
+
+  // تحديث حالة البطاقات بعد تسجيل المباراة (تُصبح مُستهلَكة)
+  function consumeMatchCards(match) {
+    (match.cardsApplied || []).forEach((c) => {
+      const inst = App.getCardInstance(c.teamId, c.iid);
+      if (inst) { inst.status = "consumed"; inst.matchId = match.id; }
+    });
+  }
+  // إرجاع بطاقات مباراة إلى حالة "مفعّلة" (عند تعديل/حذف المباراة)
+  function releaseMatchCards(matchId) {
+    App.state.teams.forEach((t) => {
+      (t.cards || []).forEach((c) => {
+        if (c.status === "consumed" && c.matchId === matchId) { c.status = "committed"; c.matchId = null; }
+      });
+    });
+  }
+  App.applyCardScoreDeltas = applyCardScoreDeltas;
+  App.applyCardFinancials = applyCardFinancials;
+  App.applyCardRatings = applyCardRatings;
+  App.consumeMatchCards = consumeMatchCards;
+  App.releaseMatchCards = releaseMatchCards;
 
   /* ---------- الأسبوع ---------- */
   // جوائز تشكيلة الأسبوع: كل لاعب في تشكيلة الأسبوع → فريقه يأخذ مبلغ الجائزة
