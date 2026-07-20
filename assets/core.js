@@ -376,6 +376,7 @@
       if (typeof l.finalPrice !== "number") l.finalPrice = 0;
       if (l.winnerTeamId === undefined) l.winnerTeamId = null;
       if (typeof l.startPrice !== "number") l.startPrice = App.MARKET_MIN_BID;
+      if (typeof l.hidden !== "boolean") l.hidden = false;
     });
     return s;
   }
@@ -1247,7 +1248,7 @@
 
   App.cardMarketActive = () => !!(App.state.cardMarket && App.state.cardMarket.active);
 
-  // يبني عناصر جولة بطاقات. entries = [{cardId, startPrice}]
+  // يبني عناصر جولة بطاقات. entries = [{cardId, startPrice, hidden}]
   function buildCardLot(entry) {
     const lib = App.getCard(entry.cardId);
     if (!lib) return null;
@@ -1257,6 +1258,7 @@
       cardId: entry.cardId,
       cardSnap: App.snapOf(lib),
       startPrice: sp,
+      hidden: !!entry.hidden, // بطاقة غامضة: تُخفى عن المزايدين حتى الإرساء
       bids: [],
       status: "open",
       winnerTeamId: null,
