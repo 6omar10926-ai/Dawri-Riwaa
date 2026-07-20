@@ -302,8 +302,8 @@
     if (isAdmin())
       return [TAB.dashboard, TAB.teams, TAB.players, TAB.matches, TAB.fixtures, TAB.market, TAB.cardmarket, TAB.cards, TAB.ledger];
     if (isPresident()) return [TAB.lineups, TAB.market, TAB.cardmarket];
-    // عرض عام
-    return [TAB.dashboard, TAB.teams, TAB.players, TAB.matches, TAB.fixtures];
+    // عرض عام (سوق البطاقات للمشاهدة فقط — بدون مزايدة)
+    return [TAB.dashboard, TAB.teams, TAB.players, TAB.matches, TAB.fixtures, TAB.cardmarket];
   }
   let route = "dashboard";
 
