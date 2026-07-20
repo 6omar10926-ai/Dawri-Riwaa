@@ -556,19 +556,15 @@
   let playersFilter = "all";
   function viewPlayers() {
     const all = App.state.players;
+    // أثناء سوق انتقالات نشط: تُخفى القائمة كاملة عن غير المشرف — حتى العدد لا
+    // يُكشف، فلا يُستنتج «فيه لاعبون ناقصون في السوق».
+    if (!isAdmin() && App.state.market && App.state.market.active) {
+      return `<div class="section-title"><h2>اللاعبون</h2></div>
+        <div class="empty"><div class="big">🔒</div>قائمة اللاعبين مخفية أثناء سوق الانتقالات.<br><span class="small muted">تظهر كاملةً بعد أن يُغلق المشرف السوق.</span></div>`;
+    }
     let list = all;
     if (playersFilter === "free") list = App.freeAgents();
     else if (playersFilter !== "all") list = App.teamPlayers(playersFilter);
-    // أثناء سوق نشط: أخفِ لاعبي السوق عن غير المشرف حتى لا يُستنتج القادمون
-    let hiddenMarketCount = 0;
-    if (!isAdmin()) {
-      const inMarket = App.marketLotPlayerIds();
-      if (inMarket.size) {
-        const before = list.length;
-        list = list.filter((p) => !inMarket.has(p.id));
-        hiddenMarketCount = before - list.length;
-      }
-    }
 
     const filters = `<div class="pill-toggle" style="flex-wrap:wrap">
       <button data-filter="all" class="${playersFilter === "all" ? "active" : ""}">الكل</button>
@@ -586,16 +582,12 @@
       ? `<div class="grid cols-2">${list.map((p) => playerCardHTML(p, { actions: isAdmin(), clickable: !isAdmin() })).join("")}</div>`
       : `<div class="empty"><div class="big">🎽</div>لا يوجد لاعبون.</div>`;
 
-    const marketNote = hiddenMarketCount
-      ? `<div class="card" style="background:#0e1830;text-align:center"><span class="small muted">🔒 ${hiddenMarketCount} لاعب مخفيّ حاليًا لأنهم في سوق الانتقالات — يظهرون بعد إغلاقه.</span></div>`
-      : "";
     return `<div class="section-title"><h2>اللاعبون</h2>
-        <span class="hint">${isAdmin() ? all.length : list.length} لاعب</span>
+        <span class="hint">${all.length} لاعب</span>
         <div class="spacer"></div>
         ${isAdmin() ? `<button class="btn primary sm" data-action="add-player">＋ لاعب جديد</button>` : ""}
       </div>
       <div style="margin-bottom:14px">${filters}</div>
-      ${marketNote}
       ${body}`;
   }
 
