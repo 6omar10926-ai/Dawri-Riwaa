@@ -292,15 +292,16 @@
     matches: { key: "matches", label: "النتائج", ico: "⚽" },
     fixtures: { key: "fixtures", label: "القادمة", ico: "📅" },
     market: { key: "market", label: "السوق", ico: "💰" },
+    cardmarket: { key: "cardmarket", label: "سوق البطاقات", ico: "🃏" },
     ledger: { key: "ledger", label: "الحسبة", ico: "📒" },
     lineups: { key: "lineups", label: "التشكيلات", ico: "🧩" },
-    cards: { key: "cards", label: "البطاقات", ico: "🃏" },
+    cards: { key: "cards", label: "البطاقات", ico: "🗂️" },
   };
   // تبويبات كل دور
   function roleTabs() {
     if (isAdmin())
-      return [TAB.dashboard, TAB.teams, TAB.players, TAB.matches, TAB.fixtures, TAB.market, TAB.cards, TAB.ledger];
-    if (isPresident()) return [TAB.lineups, TAB.market];
+      return [TAB.dashboard, TAB.teams, TAB.players, TAB.matches, TAB.fixtures, TAB.market, TAB.cardmarket, TAB.cards, TAB.ledger];
+    if (isPresident()) return [TAB.lineups, TAB.market, TAB.cardmarket];
     // عرض عام
     return [TAB.dashboard, TAB.teams, TAB.players, TAB.matches, TAB.fixtures];
   }
@@ -1523,7 +1524,7 @@
     const libHTML = lib.map((c) => {
       const right = `<span class="chip ${c.enabled ? "" : "muted"}" style="font-size:11px">${c.enabled ? "مُفعّلة" : "معطّلة"}</span>`;
       const foot = `<div class="row wrap" style="gap:6px;margin-top:8px">
-        <button class="btn sm gold" data-action="card-drop" data-id="${c.id}">⬇️ نزّل بالمزاد</button>
+        <button class="btn sm gold" data-action="card-drop" data-id="${c.id}">⬇️ نزّل بسوق البطاقات</button>
         <button class="btn sm" data-action="card-toggle" data-id="${c.id}">${c.enabled ? "تعطيل" : "تفعيل"}</button>
         <button class="btn sm ghost" data-action="card-edit" data-id="${c.id}">تعديل</button>
         <button class="btn sm danger" data-action="card-del" data-id="${c.id}">حذف</button>
@@ -1582,9 +1583,10 @@
 
     return `<div class="section-title"><h2>🃏 البطاقات المميّزة</h2><span class="hint">مكتبة الأوراق • تنزيلها في المزاد • مخزون الفرق</span></div>
       <div class="card" style="background:#0e1830">
-        <p class="muted small" style="margin:0">نزّل أي بطاقة في المزاد وتحكّم بمدّتها وسعر بدايتها. الفريق الفائز تدخل بطاقته مخزونه،
+        <p class="muted small" style="margin:0">نزّل البطاقات في <b>سوق البطاقات</b> (نافذة مستقلّة تُعرض فيها كلها معًا ويزايد عليها الرؤساء بالتوازي). الفريق الفائز تدخل بطاقته مخزونه،
         ويفعّلها رئيسه من شاشة التشكيلة (تأكيد ثم قفل). البطاقات المؤتمتة يُطبَّق أثرها تلقائيًا عند تسجيل المباراة،
         وبطاقات التدخّل تظهر لك هنا لتنفّذها يدويًا.</p>
+        <div class="row wrap" style="margin-top:8px"><button class="btn sm primary" data-action="open-card-round">🃏 افتح جولة بطاقات (متعددة)</button></div>
       </div>
       ${pendingHTML}
       <div class="section-title" style="margin:14px 0 8px"><h2 style="font-size:15px">المكتبة</h2>
@@ -1604,36 +1606,41 @@
     return `<optgroup label="مؤتمتة (تلقائية)">${auto}</optgroup><optgroup label="تدخّل يدوي (ينفّذها المشرف)">${manual}</optgroup>`;
   }
 
-  // نافذة: تنزيل بطاقة في المزاد (مدّة + سعر بداية)
+  // نافذة: تنزيل بطاقة في سوق البطاقات (مدّة + سعر بداية)
   function openDropCardModal(cardId) {
     const card = App.getCard(cardId);
     if (!card) return toast("بطاقة غير موجودة", "err");
-    const mk = App.state.market;
-    const liveNote = mk && mk.active
-      ? (mk.started ? "المزاد جارٍ — ستُضاف البطاقة لطابور العرض." : "المزاد في مرحلة التحضير — ستُضاف لقائمة السوق.")
-      : "لا يوجد مزاد نشط — سيُفتح مزاد للبطاقة ويبدأ فورًا.";
+    const active = App.cardMarketActive();
+    const liveNote = active
+      ? "جولة بطاقات نشطة — ستُضاف هذه البطاقة إليها فورًا (المدّة تتبع الجولة الحالية)."
+      : "لا توجد جولة نشطة — ستُفتح جولة بطاقات وتُعرض فورًا.";
     const body = `
       ${cardBadgeHTML(card, {})}
       <div class="grid cols-2" style="margin-top:10px">
         <label class="field"><span>سعر بداية المزايدة</span>
           <input id="drop-price" type="number" step="${App.MARKET_BID_STEP}" min="0" value="${App.MARKET_MIN_BID}"></label>
-        <label class="field"><span>مدّة العرض (ثانية)</span>
-          <input id="drop-dur" type="number" min="5" step="5" value="${Math.round(App.AUCTION_DURATION_MS / 1000)}"></label>
+        <label class="field"><span>مدّة الجولة (ثانية)</span>
+          <input id="drop-dur" type="number" min="10" step="10" value="${Math.round(App.CARD_MARKET_DURATION_MS / 1000)}" ${active ? "disabled" : ""}></label>
       </div>
       <div class="small muted">${esc(liveNote)}</div>`;
     modal({
-      title: "تنزيل بطاقة في المزاد",
+      title: "تنزيل بطاقة في سوق البطاقات",
       body,
-      foot: `<button class="btn gold" data-save>⬇️ نزّل بالمزاد</button><button class="btn ghost" data-close>إلغاء</button>`,
+      foot: `<button class="btn gold" data-save>⬇️ نزّل</button><button class="btn ghost" data-close>إلغاء</button>`,
       onOpen(root, close) {
         $("[data-save]", root).onclick = () => {
           const startPrice = parseInt($("#drop-price", root).value, 10) || App.MARKET_MIN_BID;
-          const durationSec = parseInt($("#drop-dur", root).value, 10) || Math.round(App.AUCTION_DURATION_MS / 1000);
-          const res = App.addCardLot(cardId, { startPrice, durationSec });
+          const entries = [{ cardId, startPrice }];
+          let res;
+          if (active) res = App.addCardsToRound(entries);
+          else {
+            const durationSec = parseInt($("#drop-dur", root).value, 10) || Math.round(App.CARD_MARKET_DURATION_MS / 1000);
+            res = App.openCardMarket(entries, durationSec);
+          }
           if (!res.ok) return toast(res.msg, "err");
           toast(res.msg || "نُزّلت البطاقة", "ok");
           close();
-          go("market");
+          go("cardmarket");
         };
       },
     });
@@ -1705,6 +1712,139 @@
     });
   }
 
+  /* =========================================================
+     سوق البطاقات (عرض متوازٍ) — نافذة مستقلة عن سوق الانتقالات
+     ========================================================= */
+  function cardMarketCountdownChip(cm) {
+    if (typeof cm.endsAt !== "number") return "";
+    const secs = Math.max(0, Math.ceil((cm.endsAt - Date.now()) / 1000));
+    return `<span class="auction-countdown js-cardmarket-countdown${secs <= 10 ? " urgent" : ""}">${secs}ث</span>`;
+  }
+
+  function cardMarketLotHTML(lot, myTeam) {
+    const snap = lot.cardSnap || {};
+    const highest = lot.bids.length ? lot.bids[lot.bids.length - 1] : null;
+    const highTeam = highest ? App.getTeam(highest.teamId) : null;
+    const badge =
+      lot.status === "sold"
+        ? `<span class="badge sold">بيع لـ ${esc(App.getTeam(lot.winnerTeamId)?.name || "")} بـ ${fmtShort(lot.finalPrice)}</span>`
+        : lot.status === "unsold"
+        ? `<span class="badge unsold">لم تُبع</span>`
+        : `<span class="badge open">مفتوحة</span>`;
+    const minBid = App.cardLotMinBid(lot);
+    const bidHint = `<div class="small muted" style="width:100%">أقل مزايدة ${fmtMoney(minBid)} • من مضاعفات ${fmtMoney(App.MARKET_BID_STEP)}</div>`;
+    let controls = "";
+    if (lot.status === "open" && isAdmin()) {
+      controls = `<div class="row wrap" style="margin-top:10px;gap:8px">
+        <select data-bid-team="${lot.id}" style="width:auto;min-width:120px">${teamOptions(highTeam ? highTeam.id : App.state.teams[0].id)}</select>
+        <input type="number" data-bid-amount="${lot.id}" value="${minBid}" min="${minBid}" step="${App.MARKET_BID_STEP}" style="width:140px">
+        <button class="btn sm primary" data-action="place-card-bid" data-id="${lot.id}">مزايدة</button>
+        <button class="btn sm gold" data-action="finalize-card-lot" data-id="${lot.id}">إرساء ✔</button>
+        ${bidHint}
+      </div>`;
+    } else if (lot.status === "open" && isPresident() && myTeam) {
+      controls = `<div class="row wrap" style="margin-top:10px;gap:8px">
+        <input type="hidden" data-bid-team="${lot.id}" value="${myTeam.id}">
+        <span class="chip"><span style="width:10px;height:10px;border-radius:3px;background:${myTeam.color};display:inline-block"></span> ميزانيتك: ${fmtMoney(myTeam.budget)}</span>
+        <input type="number" data-bid-amount="${lot.id}" value="${minBid}" min="${minBid}" step="${App.MARKET_BID_STEP}" style="width:140px">
+        <button class="btn sm primary" data-action="place-card-bid" data-id="${lot.id}">مزايدة</button>
+        ${bidHint}
+      </div>`;
+    }
+    const bidsLog = lot.bids.length
+      ? `<div class="small muted" style="margin-top:6px">أعلى مزايدة: <b style="color:${highTeam?.color}">${esc(highTeam?.name)}</b> — ${fmtMoney(highest.amount)} • (${lot.bids.length} مزايدة)</div>`
+      : `<div class="small muted" style="margin-top:6px">لا مزايدات بعد • تبدأ من ${fmtMoney(lot.startPrice)}</div>`;
+    return `<div class="card">
+      <div class="row between">${badge}</div>
+      <div style="margin-top:8px">${cardBadgeHTML({ icon: snap.icon, name: snap.name, desc: snap.desc, eff: snap.eff, val: snap.val }, {})}</div>
+      ${bidsLog}
+      ${controls}
+    </div>`;
+  }
+
+  function viewCardMarket() {
+    const cm = App.state.cardMarket;
+    const myTeam = isPresident() ? App.getTeam(myTeamId()) : null;
+    if (!cm || !cm.active) {
+      if (!isAdmin())
+        return `<div class="section-title"><h2>🃏 سوق البطاقات</h2></div>
+          <div class="empty"><div class="big">🃏</div>لا توجد جولة بطاقات مفتوحة. انتظر أن يفتحها المشرف.</div>`;
+      const enabled = App.enabledCards().length;
+      return `<div class="section-title"><h2>🃏 سوق البطاقات</h2><span class="hint">عرض متوازٍ — كل البطاقات معًا</span></div>
+        <div class="card">
+          <p class="muted" style="margin-top:0">اختر البطاقات التي تريد نزولها، فتُعرض <b>كلها دفعة واحدة</b> ويزايد عليها الرؤساء في أي وقت (بلا انتظار إرساء). عند انتهاء وقت الجولة تُرسى كل بطاقة على أعلى مزايد.</p>
+          <div class="row wrap">
+            <button class="btn primary" data-action="open-card-round" ${enabled ? "" : "disabled"}>🃏 افتح جولة بطاقات</button>
+          </div>
+          <p class="small muted">بطاقات المكتبة المفعّلة: ${enabled}</p>
+        </div>`;
+    }
+    const lots = cm.lots.map((lot) => cardMarketLotHTML(lot, myTeam)).join("");
+    const adminBar = isAdmin()
+      ? `<button class="btn sm primary" data-action="open-card-round">＋ أضف بطاقات</button>
+         <button class="btn sm danger" data-action="close-card-round">إغلاق الجولة الآن</button>`
+      : "";
+    return `<div class="section-title"><h2>🃏 سوق البطاقات</h2>
+        <span class="chip">⏱ ${cardMarketCountdownChip(cm)}</span>
+        <div class="spacer"></div>${adminBar}</div>
+      <div class="grid cols-2">${lots}</div>`;
+  }
+
+  // نافذة: اختيار بطاقات الجولة (متعدد) + سعر بداية + مدّة
+  function openCardRoundModal() {
+    const lib = App.enabledCards();
+    if (!lib.length) return toast("لا بطاقات مفعّلة في المكتبة", "err");
+    const rows = lib.map((c) => `<label class="row" style="padding:8px;border-bottom:1px solid var(--line);gap:10px">
+        <input type="checkbox" style="width:auto" data-pick-card="${c.id}">
+        <span style="flex:1">${esc(c.icon)} <b>${esc(c.name)}</b> <span class="small muted">${esc(App.cardEffect(c.eff)?.label || "")} ${esc(App.cardValueText(c))}</span></span>
+      </label>`).join("");
+    const active = App.cardMarketActive();
+    const body = document.createElement("div");
+    body.innerHTML = `
+      <div class="grid cols-2">
+        <label class="field"><span>سعر بداية المزايدة (للكل)</span><input id="cr-price" type="number" step="${App.MARKET_BID_STEP}" min="0" value="${App.MARKET_MIN_BID}"></label>
+        <label class="field"><span>مدّة الجولة (ثانية)</span><input id="cr-dur" type="number" min="10" step="10" value="${Math.round(App.CARD_MARKET_DURATION_MS / 1000)}" ${active ? "disabled" : ""}></label>
+      </div>
+      ${active ? `<div class="small muted">جولة نشطة — ستُضاف البطاقات المختارة إليها (المدّة تتبع الجولة الحالية).</div>` : ""}
+      <div class="section-title" style="margin:8px 4px 4px"><h2 style="font-size:14px">اختر البطاقات</h2></div>
+      ${rows}`;
+    modal({
+      title: active ? "إضافة بطاقات للجولة" : "فتح جولة بطاقات",
+      body,
+      foot: `<button class="btn primary" data-save>🃏 نزّل المختارة</button><button class="btn ghost" data-close>إلغاء</button>`,
+      onOpen(root, close) {
+        $("[data-save]", root).onclick = () => {
+          const price = parseInt($("#cr-price", root).value, 10) || App.MARKET_MIN_BID;
+          const ids = Array.from(root.querySelectorAll("[data-pick-card]:checked")).map((el) => el.getAttribute("data-pick-card"));
+          if (!ids.length) return toast("اختر بطاقة واحدة على الأقل", "err");
+          const entries = ids.map((id) => ({ cardId: id, startPrice: price }));
+          let res;
+          if (active) res = App.addCardsToRound(entries);
+          else {
+            const dur = parseInt($("#cr-dur", root).value, 10) || Math.round(App.CARD_MARKET_DURATION_MS / 1000);
+            res = App.openCardMarket(entries, dur);
+          }
+          if (!res.ok) return toast(res.msg, "err");
+          toast(res.msg, "ok");
+          close();
+          go("cardmarket");
+        };
+      },
+    });
+  }
+
+  // مزايدة على بطاقة في سوق البطاقات
+  function doCardBid(lotId) {
+    const teamSel = document.querySelector(`[data-bid-team="${lotId}"]`);
+    const amtInp = document.querySelector(`[data-bid-amount="${lotId}"]`);
+    const amount = parseInt(amtInp.value, 10);
+    if (!amount || amount <= 0) return toast("أدخل مبلغًا صحيحًا", "err");
+    const res = App.placeCardBid(lotId, teamSel.value, amount);
+    if (!res.ok) return toast(res.msg, "err");
+    toast("سُجّلت المزايدة", "ok");
+    render();
+  }
+
   const VIEWS = {
     dashboard: viewDashboard,
     teams: viewTeams,
@@ -1712,6 +1852,7 @@
     matches: viewMatches,
     fixtures: viewFixtures,
     market: viewMarket,
+    cardmarket: viewCardMarket,
     ledger: viewLedger,
     lineups: viewLineups,
     cards: viewCards,
@@ -1797,7 +1938,8 @@
     "edit-team", "adjust-budget", "add-week-event", "del-week-event", "open-market-random", "open-market-manual", "finalize-lot",
     "start-market", "close-market", "auction-screen", "export", "import",
     "add-fixture", "edit-fixture", "del-fixture", "fixture-done",
-    "card-drop", "card-toggle", "card-edit", "card-del", "card-add", "card-grant", "card-remove", "card-uncommit",
+    "card-drop", "card-toggle", "card-edit", "card-del", "card-add", "card-grant", "card-remove", "card-uncommit", "card-exec",
+    "open-card-round", "close-card-round", "finalize-card-lot",
   ]);
 
   // غلاف يلتقط أي خطأ أثناء تنفيذ الإجراء (مثل فتح نافذة) فيُظهره كرسالة
@@ -1882,6 +2024,13 @@
         return confirmBox("إرساء المزاد على أعلى مزايد الآن؟", () => { App.finalizeLot(id); toast("تم الإرساء", "ok"); render(); });
       case "close-market":
         return confirmBox("إغلاق السوق؟ اللاعبون غير المُباعين يبقون أحرارًا.", () => { App.closeMarket(); toast("أُغلق السوق"); go("dashboard"); });
+      // سوق البطاقات
+      case "open-card-round": return openCardRoundModal();
+      case "place-card-bid": return doCardBid(id);
+      case "finalize-card-lot":
+        return confirmBox("إرساء هذه البطاقة على أعلى مزايد الآن؟", () => { App.finalizeCardLot(id); toast("تم الإرساء", "ok"); render(); });
+      case "close-card-round":
+        return confirmBox("إغلاق جولة البطاقات؟ تُرسى كل البطاقات على أعلى مزايد، وما بلا مزايدة يبقى بلا بيع.", () => { App.closeCardMarket(); toast("أُغلقت الجولة", "ok"); render(); });
       case "export": return doExport();
       case "import": return doImport();
       // المباريات القادمة
@@ -3113,10 +3262,25 @@
     }
   }
 
+  // مؤقّت سوق البطاقات (عرض متوازٍ) — عدّاد واحد للجولة، وعند انتهائه تُرسى كلها
+  function cardMarketTick() {
+    const cm = App.state.cardMarket;
+    const els = document.querySelectorAll(".js-cardmarket-countdown");
+    const running = cm && cm.active && typeof cm.endsAt === "number";
+    if (!running) { els.forEach((el) => { el.textContent = "—"; el.classList.remove("urgent"); }); return; }
+    const remaining = Math.max(0, cm.endsAt - Date.now());
+    const secs = Math.ceil(remaining / 1000);
+    els.forEach((el) => { el.textContent = secs + "ث"; el.classList.toggle("urgent", secs <= 10); });
+    if (remaining <= 0 && isAdmin()) {
+      if (App.expireCardMarket()) render();
+    }
+  }
+
   /* ---------- الإقلاع ---------- */
   const initRoute = (location.hash || "").replace("#", "");
   if (VIEWS[initRoute]) route = initRoute;
   document.addEventListener("DOMContentLoaded", render);
   if (document.readyState !== "loading") render();
   setInterval(marketTick, 500);
+  setInterval(cardMarketTick, 500);
 })();

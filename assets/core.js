@@ -266,6 +266,7 @@
       marketHistory: [], // أرشيف الأسواق المغلقة مع صفقاتها
       weekEvents: [], // أحداث يدوية لكل أسبوع {id,week,text,date}
       cardLibrary: defaultCardLibrary(), // مكتبة البطاقات المميّزة (يديرها المشرف)
+      cardMarket: { active: false, endsAt: null, lots: [] }, // سوق البطاقات (عرض متوازٍ — كل البطاقات معًا)
     };
   }
   App.defaultState = defaultState;
@@ -364,6 +365,18 @@
       s.cardLibrary.forEach((c) => { if (typeof c.enabled !== "boolean") c.enabled = true; });
     }
     (s.teams || []).forEach((t) => { if (!Array.isArray(t.cards)) t.cards = []; });
+    // سوق البطاقات (عرض متوازٍ)
+    if (!s.cardMarket || typeof s.cardMarket !== "object") s.cardMarket = { active: false, endsAt: null, lots: [] };
+    if (!Array.isArray(s.cardMarket.lots)) s.cardMarket.lots = [];
+    if (typeof s.cardMarket.active !== "boolean") s.cardMarket.active = false;
+    if (s.cardMarket.endsAt === undefined) s.cardMarket.endsAt = null;
+    s.cardMarket.lots.forEach((l) => {
+      if (!Array.isArray(l.bids)) l.bids = [];
+      if (l.status !== "sold" && l.status !== "unsold") l.status = "open";
+      if (typeof l.finalPrice !== "number") l.finalPrice = 0;
+      if (l.winnerTeamId === undefined) l.winnerTeamId = null;
+      if (typeof l.startPrice !== "number") l.startPrice = App.MARKET_MIN_BID;
+    });
     return s;
   }
   function saveLocal() {
@@ -1223,6 +1236,129 @@
     }
     save();
     return { ok: true, msg: mk.started ? "أُضيفت البطاقة لطابور المزاد" : "أُضيفت البطاقة لقائمة السوق" };
+  };
+
+  /* =============================================================
+     سوق البطاقات (عرض متوازٍ) — منفصل عن سوق الانتقالات
+     كل البطاقات تُعرض معًا، والفرق تزايد على أيّها في أي وقت،
+     ولا حاجة لانتظار إرساء واحدة لتظهر الأخرى. مؤقّت واحد للجولة كلها،
+     وعند انتهائه (أو إغلاق المشرف) تُرسى كل البطاقات على أعلى مزايد. */
+  App.CARD_MARKET_DURATION_MS = 120_000; // مدّة جولة البطاقات الافتراضية
+
+  App.cardMarketActive = () => !!(App.state.cardMarket && App.state.cardMarket.active);
+
+  // يبني عناصر جولة بطاقات. entries = [{cardId, startPrice}]
+  function buildCardLot(entry) {
+    const lib = App.getCard(entry.cardId);
+    if (!lib) return null;
+    const sp = Math.max(0, Math.round(Number(entry.startPrice) || App.MARKET_MIN_BID));
+    return {
+      id: uid(),
+      cardId: entry.cardId,
+      cardSnap: App.snapOf(lib),
+      startPrice: sp,
+      bids: [],
+      status: "open",
+      winnerTeamId: null,
+      finalPrice: 0,
+    };
+  }
+
+  // يفتح جولة بطاقات جديدة (كل البطاقات تُعرض معًا فورًا)
+  App.openCardMarket = function (entries, durationSec) {
+    const lots = (entries || []).map(buildCardLot).filter(Boolean);
+    if (!lots.length) return { ok: false, msg: "اختر بطاقة واحدة على الأقل" };
+    const dur = durationSec ? Math.max(10, Math.round(durationSec)) * 1000 : App.CARD_MARKET_DURATION_MS;
+    App.state.cardMarket = {
+      id: uid(),
+      active: true,
+      week: App.state.club.week,
+      endsAt: Date.now() + dur,
+      lots,
+    };
+    save();
+    return { ok: true, msg: "فُتحت جولة بطاقات (" + lots.length + ")" };
+  };
+
+  // يضيف بطاقة (أو أكثر) لجولة نشطة
+  App.addCardsToRound = function (entries) {
+    const cm = App.state.cardMarket;
+    if (!cm || !cm.active) return App.openCardMarket(entries);
+    const lots = (entries || []).map(buildCardLot).filter(Boolean);
+    if (!lots.length) return { ok: false, msg: "لا بطاقات" };
+    cm.lots.push(...lots);
+    save();
+    return { ok: true, msg: "أُضيفت " + lots.length + " بطاقة للجولة" };
+  };
+
+  // أقل مزايدة مسموحة لعنصر بطاقة
+  App.cardLotMinBid = function (lot) {
+    const highest = lot && lot.bids && lot.bids.length ? lot.bids[lot.bids.length - 1].amount : 0;
+    return highest ? highest + App.MARKET_BID_STEP : (typeof lot.startPrice === "number" ? lot.startPrice : App.MARKET_MIN_BID);
+  };
+
+  // مزايدة على بطاقة (متوازية — أي بطاقة مفتوحة في أي وقت)
+  App.placeCardBid = function (lotId, teamId, amount) {
+    const cm = App.state.cardMarket;
+    if (!cm || !cm.active) return { ok: false, msg: "لا توجد جولة بطاقات نشطة" };
+    const lot = cm.lots.find((l) => l.id === lotId);
+    if (!lot || lot.status !== "open") return { ok: false, msg: "المزايدة مغلقة" };
+    const team = App.getTeam(teamId);
+    if (!team) return { ok: false, msg: "فريق غير موجود" };
+    const step = App.MARKET_BID_STEP;
+    const minAllowed = App.cardLotMinBid(lot);
+    if (amount % step !== 0) return { ok: false, msg: "المزايدة من مضاعفات " + fmtMoney(step) };
+    if (amount < minAllowed) return { ok: false, msg: "أقل مزايدة: " + fmtMoney(minAllowed) };
+    if (amount > team.budget) return { ok: false, msg: "الميزانية لا تكفي (" + fmtMoney(team.budget) + ")" };
+    lot.bids.push({ teamId, amount, at: new Date().toISOString() });
+    // مانع القنص: مزايدة في آخر نافذة تمدّد وقت الجولة كلها
+    if (typeof cm.endsAt === "number") {
+      const remaining = cm.endsAt - Date.now();
+      if (remaining > 0 && remaining <= App.AUCTION_EXTEND_WINDOW_MS) cm.endsAt += App.AUCTION_EXTEND_MS;
+    }
+    save();
+    return { ok: true };
+  };
+
+  // إرساء عنصر بطاقة واحد على أعلى مزايد (يمنح البطاقة للفائز)
+  function finalizeCardLot(lot) {
+    if (!lot || lot.status !== "open") return;
+    if (!lot.bids.length) { lot.status = "unsold"; return; }
+    const top = lot.bids[lot.bids.length - 1];
+    lot.status = "sold";
+    lot.winnerTeamId = top.teamId;
+    lot.finalPrice = top.amount;
+    addTransaction(top.teamId, -top.amount, "شراء بطاقة: " + (lot.cardSnap ? lot.cardSnap.name : ""), { refType: "cardmarket", refId: lot.id });
+    grantCardFromSnap(top.teamId, lot.cardId, lot.cardSnap);
+  }
+
+  // إرساء بطاقة محدّدة يدويًا (المشرف)
+  App.finalizeCardLot = function (lotId) {
+    const cm = App.state.cardMarket;
+    if (!cm) return;
+    const lot = cm.lots.find((l) => l.id === lotId);
+    finalizeCardLot(lot);
+    if (cm.lots.every((l) => l.status !== "open")) { cm.active = false; cm.endsAt = null; }
+    save();
+  };
+
+  // إغلاق الجولة كاملة: تُرسى كل البطاقات المفتوحة على أعلى مزايد
+  App.closeCardMarket = function () {
+    const cm = App.state.cardMarket;
+    if (!cm) return;
+    cm.lots.forEach((l) => finalizeCardLot(l));
+    cm.active = false;
+    cm.endsAt = null;
+    save();
+  };
+
+  // انتهاء مؤقّت الجولة (يستدعيه المؤقّت في الواجهة — المشرف فقط)
+  App.expireCardMarket = function () {
+    const cm = App.state.cardMarket;
+    if (!cm || !cm.active || typeof cm.endsAt !== "number") return false;
+    if (Date.now() < cm.endsAt) return false;
+    App.closeCardMarket();
+    return true;
   };
 
   /* ---------- مخزون الفرق + الاستعلام ---------- */
