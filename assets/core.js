@@ -993,7 +993,9 @@
           refType: "transfer",
           refId: lot.id,
         });
-        if (player) player.teamId = top.teamId;
+        // الانتقال لا يُطبَّق الآن: يبقى اللاعب في فريقه حتى يُغلق السوق (تفاديًا
+        // لتسريب من يُباع/يُعرض عبر مراقبة تغيّر أرصدة الفرق أثناء المزاد).
+        // يُطبَّق كل الانتقالات دفعةً واحدة في applyPendingTransfers عند الإغلاق.
       }
     }
     advanceMarket(idx);
@@ -1010,10 +1012,35 @@
     return i === -1 ? mk.lots.length : i;
   };
 
+  // يطبّق انتقالات اللاعبين المُرساة (المؤجّلة) دفعةً واحدة عند نهاية السوق.
+  // آمن للاستدعاء أكثر من مرة (idempotent).
+  function applyPendingTransfers(mk) {
+    if (!mk || !Array.isArray(mk.lots)) return;
+    mk.lots.forEach((l) => {
+      if (l.type === "card" || l.status !== "sold" || !l.winnerTeamId) return;
+      const p = App.getPlayer(l.playerId);
+      if (p && p.teamId !== l.winnerTeamId) p.teamId = l.winnerTeamId;
+    });
+  }
+  App.applyPendingTransfers = applyPendingTransfers;
+
+  // مجموعة معرّفات اللاعبين المعروضين في سوق نشط (لإخفائهم عن القوائم العامة
+  // أثناء المزاد حتى لا يستنتج أحدٌ من اللاعبين القادمين).
+  App.marketLotPlayerIds = function () {
+    const mk = App.state.market;
+    const set = new Set();
+    if (mk && mk.active && Array.isArray(mk.lots)) {
+      mk.lots.forEach((l) => { if (l.type !== "card" && l.playerId) set.add(l.playerId); });
+    }
+    return set;
+  };
+
   // أرشفة سوق مغلق: يبني لقطة بأسماء اللاعبين والفرق والأسعار وقت الإغلاق.
   // يؤرشف مرة واحدة فقط (mk.archived) وفقط إن وُجدت صفقة مُرساة.
   function archiveMarket(mk) {
     if (!mk || mk.archived || !Array.isArray(mk.lots)) return;
+    // نهاية السوق → طبّق كل الانتقالات المؤجّلة الآن (اللاعبون ينتقلون لفرقهم الجديدة)
+    applyPendingTransfers(mk);
     const resolved = mk.lots.filter((l) => l.status === "sold" || l.status === "unsold");
     if (!resolved.length) return;
     const deals = mk.lots

@@ -559,6 +559,16 @@
     let list = all;
     if (playersFilter === "free") list = App.freeAgents();
     else if (playersFilter !== "all") list = App.teamPlayers(playersFilter);
+    // أثناء سوق نشط: أخفِ لاعبي السوق عن غير المشرف حتى لا يُستنتج القادمون
+    let hiddenMarketCount = 0;
+    if (!isAdmin()) {
+      const inMarket = App.marketLotPlayerIds();
+      if (inMarket.size) {
+        const before = list.length;
+        list = list.filter((p) => !inMarket.has(p.id));
+        hiddenMarketCount = before - list.length;
+      }
+    }
 
     const filters = `<div class="pill-toggle" style="flex-wrap:wrap">
       <button data-filter="all" class="${playersFilter === "all" ? "active" : ""}">الكل</button>
@@ -576,12 +586,16 @@
       ? `<div class="grid cols-2">${list.map((p) => playerCardHTML(p, { actions: isAdmin(), clickable: !isAdmin() })).join("")}</div>`
       : `<div class="empty"><div class="big">🎽</div>لا يوجد لاعبون.</div>`;
 
+    const marketNote = hiddenMarketCount
+      ? `<div class="card" style="background:#0e1830;text-align:center"><span class="small muted">🔒 ${hiddenMarketCount} لاعب مخفيّ حاليًا لأنهم في سوق الانتقالات — يظهرون بعد إغلاقه.</span></div>`
+      : "";
     return `<div class="section-title"><h2>اللاعبون</h2>
-        <span class="hint">${all.length} لاعب</span>
+        <span class="hint">${isAdmin() ? all.length : list.length} لاعب</span>
         <div class="spacer"></div>
         ${isAdmin() ? `<button class="btn primary sm" data-action="add-player">＋ لاعب جديد</button>` : ""}
       </div>
       <div style="margin-bottom:14px">${filters}</div>
+      ${marketNote}
       ${body}`;
   }
 
@@ -650,13 +664,16 @@
 
   // مرحلة التحضير: نُزّل اللاعبون ولم يبدأ المزاد
   function viewMarketStaging(mk) {
-    const cards = mk.lots.map((lot) => `<div class="card">${marketLotBodyHTML(lot)}</div>`).join("");
+    // اللاعبون لا يُكشفون في التحضير إلا للمشرف — تفاديًا لمعرفة القادمين
+    const cards = isAdmin()
+      ? mk.lots.map((lot) => `<div class="card">${marketLotBodyHTML(lot)}</div>`).join("")
+      : `<div class="card" style="text-align:center;border-style:dashed"><div class="big" style="font-size:30px">🔒</div><div class="muted">السوق قيد التحضير — يُكشف اللاعبون واحدًا تلو الآخر عند بدء المزاد.</div></div>`;
     const startBtn = isAdmin()
       ? `<button class="btn gold" data-action="start-market">▶️ ابدأ السوق</button>
          <button class="btn" data-action="open-market-manual">✋ تعديل اللاعبين</button>
          <button class="btn sm danger" data-action="close-market">إلغاء</button>`
       : `<span class="hint">بانتظار أن يبدأ المشرف المزاد…</span>`;
-    return `<div class="section-title"><h2>سوق الانتقالات</h2><span class="hint">تحضير — ${mk.lots.length} لاعب</span><div class="spacer"></div>${marketHistoryBtn()}</div>
+    return `<div class="section-title"><h2>سوق الانتقالات</h2><span class="hint">تحضير${isAdmin() ? " — " + mk.lots.length + " لاعب" : ""}</span><div class="spacer"></div>${marketHistoryBtn()}</div>
       <div class="card">
         <p class="muted" style="margin-top:0">اللاعبون جاهزون للمزاد. لكل لاعب ${App.AUCTION_DURATION_MS / 1000} ثانية، وأي مزايدة في آخر ${App.AUCTION_EXTEND_WINDOW_MS / 1000} ثوانٍ تُمدّد الوقت ${App.AUCTION_EXTEND_MS / 1000} ثوانٍ. حد الشراء ${App.marketMaxPerTeam(mk)} لاعبين لكل فريق.</p>
         <div class="row wrap">${startBtn}</div>
