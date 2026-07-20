@@ -188,6 +188,10 @@
     { key: "ratingProtect",     label: "تحصين تقييم لاعب", valueKind: "none", scope: "self", needsTarget: "ownPlayer", hint: "تُلغى كل الخصومات على تقييم لاعب تختاره في هذه المباراة." },
     { key: "investment",        label: "استثمار (مضاعف لو فزت)", valueKind: "money", scope: "self", needsTarget: null, hint: "يُخصم المبلغ الآن، ويُعاد لك ضِعفه لو فزت بالمباراة." },
     { key: "fineImmunity",      label: "حماية من الغرامة", valueKind: "none", scope: "self", needsTarget: null, hint: "تُلغى غرامة واحدة يوجّهها الخصم لفريقك في هذه المباراة." },
+    // ---- آثار فورية عند الشراء (تُنفّذ لحظة امتلاك البطاقة، لا تدخل المخزون) ----
+    { key: "selfFine",   label: "خصم على المشتري",  valueKind: "money", scope: "self", instant: true, hint: "يُخصم المبلغ من مشتري البطاقة فور شرائها (مقلب)." },
+    { key: "randomCard", label: "بطاقة عشوائية",    valueKind: "none",  scope: "self", instant: true, hint: "يحصل المشتري على بطاقة عشوائية من المكتبة فور الشراء." },
+    { key: "dud",        label: "مقلب (لا شيء)",     valueKind: "none",  scope: "self", instant: true, hint: "بطاقة فارغة لا تفعل شيئًا — مجرّد مقلب." },
     // ---- آثار تدخّل يدوي (ينفّذها المشرف) — لا تُطبَّق تلقائيًا ----
     { key: "banPlayer",     label: "إيقاف لاعب الخصم",  valueKind: "none", scope: "opponent", needsTarget: "opponentPlayer", manual: true, hint: "يُمنع لاعب مختار من الخصم من اللعب — ينفّذها المشرف." },
     { key: "freezeStar",    label: "تجميد نجم الخصم",   valueKind: "none", scope: "opponent", needsTarget: "opponentPlayer", manual: true, hint: "يُجمّد لاعب مختار من الخصم أسبوعًا — ينفّذها المشرف." },
@@ -197,6 +201,7 @@
   ];
   App.cardEffect = (key) => App.CARD_EFFECTS.find((e) => e.key === key) || null;
   App.isManualEffect = (key) => { const e = App.cardEffect(key); return !!(e && e.manual); };
+  App.isInstantEffect = (key) => { const e = App.cardEffect(key); return !!(e && e.instant); };
 
   // مكتبة البطاقات الافتراضية (يديرها المشرف: تعديل/تعطيل/إضافة/حذف).
   App.DEFAULT_CARD_LIBRARY = [
@@ -226,6 +231,10 @@
     { id: "c_fine5",        icon: "💥",  name: "غرامة قاسية",     eff: "fineOpponent",     val: 5_000_000, desc: "تُخصم غرامة (5م) من ميزانية الخصم." },
     { id: "c_cancel2goals", icon: "🚧",  name: "إلغاء هدفين",     eff: "cancelGoalOpp",    val: 2,        desc: "يُلغى هدفان من رصيد الخصم في هذه المباراة." },
     { id: "c_win_x3",       icon: "🏆",  name: "فوز ثلاثي",       eff: "winMultiplier",    val: 2,        desc: "مكافأة الفوز في هذه المباراة تُضاف مرتين إضافيتين." },
+    // ---- بطاقات مقلب/مفاجأة (أثر فوري عند الشراء) ----
+    { id: "c_self_fine",    icon: "💣",  name: "بطاقة ملغومة",    eff: "selfFine",         val: 5_000_000, desc: "من يشتريها تُخصم من ميزانيته ٥ ملايين فورًا — مقلب! (نزّلها مخفية)." },
+    { id: "c_random",       icon: "🎲",  name: "بطاقة عشوائية",   eff: "randomCard",       val: 0,        desc: "من يشتريها يحصل على بطاقة عشوائية من المكتبة فور الشراء." },
+    { id: "c_dud",          icon: "🕳️", name: "مقلب فارغ",       eff: "dud",              val: 0,        desc: "بطاقة فارغة لا تفعل شيئًا — مجرّد مقلب (نزّلها مخفية)." },
     // ---- بطاقات تدخّل يدوي (ينفّذها المشرف) ----
     { id: "c_ban",          icon: "🚫",  name: "إيقاف لاعب",      eff: "banPlayer",        val: 0,        desc: "امنع لاعبًا من الخصم من اللعب في مباراته — ينفّذها المشرف." },
     { id: "c_freeze",       icon: "🧊",  name: "تجميد نجم",       eff: "freezeStar",       val: 0,        desc: "جمّد لاعبًا من الخصم أسبوعًا — ينفّذها المشرف." },
@@ -984,7 +993,7 @@
           refType: "transfer",
           refId: lot.id,
         });
-        grantCardFromSnap(top.teamId, lot.cardId, lot.cardSnap);
+        acquireCard(top.teamId, lot.cardId, lot.cardSnap);
       } else {
         const player = App.getPlayer(lot.playerId);
         // خصم الثمن من المشتري فقط — القيمة "تختفي" ولا تُضاف لأي فريق (حتى لو كان
@@ -1194,14 +1203,42 @@
   }
   App.grantCardFromSnap = grantCardFromSnap;
 
+  // امتلاك بطاقة (فوز في السوق أو منح المشرف). البطاقات الفورية تُحسم هنا فورًا
+  // ولا تدخل المخزون؛ غيرها تُضاف للمخزون كالمعتاد.
+  //  selfFine   → يُخصم المبلغ من المشتري.
+  //  randomCard → يُمنح المشتري بطاقة عشوائية غير فورية من المكتبة المفعّلة.
+  //  dud        → لا شيء (مقلب).
+  function acquireCard(teamId, cardId, snap) {
+    const team = App.getTeam(teamId);
+    if (!team || !snap) return { ok: false, msg: "فريق غير موجود" };
+    const eff = snap.eff;
+    if (eff === "selfFine") {
+      addTransaction(teamId, -(snap.val || 0), "بطاقة: " + snap.name + " (خصم على المشتري)", { refType: "cardmarket", refId: uid() });
+      return { ok: true, resolved: "selfFine" };
+    }
+    if (eff === "dud") {
+      return { ok: true, resolved: "dud" };
+    }
+    if (eff === "randomCard") {
+      const pool = (App.enabledCards() || []).filter((c) => !App.isInstantEffect(c.eff));
+      if (!pool.length) return { ok: true, resolved: "randomCard", grantedName: null };
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      const inst = grantCardFromSnap(teamId, pick.id, App.snapOf(pick));
+      return { ok: true, resolved: "randomCard", instance: inst, grantedName: pick.name };
+    }
+    const inst = grantCardFromSnap(teamId, cardId, snap);
+    return { ok: true, instance: inst };
+  }
+  App.acquireCard = acquireCard;
+
   // منح بطاقة من المكتبة لفريق مباشرة (يستخدمه المشرف من إدارة المخزون)
   App.grantCard = function (teamId, cardId) {
     const lib = App.getCard(cardId);
     if (!lib) return { ok: false, msg: "بطاقة غير موجودة" };
-    const inst = grantCardFromSnap(teamId, cardId, lib);
-    if (!inst) return { ok: false, msg: "فريق غير موجود" };
+    const res = acquireCard(teamId, cardId, App.snapOf(lib));
+    if (!res.ok) return res;
     save();
-    return { ok: true };
+    return res;
   };
 
   // إزالة نسخة بطاقة من مخزون فريق (المشرف)
@@ -1358,7 +1395,11 @@
     lot.winnerTeamId = top.teamId;
     lot.finalPrice = top.amount;
     addTransaction(top.teamId, -top.amount, "شراء بطاقة: " + (lot.cardSnap ? lot.cardSnap.name : ""), { refType: "cardmarket", refId: lot.id });
-    grantCardFromSnap(top.teamId, lot.cardId, lot.cardSnap);
+    const res = acquireCard(top.teamId, lot.cardId, lot.cardSnap);
+    // كشف نتيجة البطاقات الفورية (المقلب) بعد الإرساء
+    if (res.resolved === "selfFine") lot.resolvedNote = "💣 خُصم " + fmtShort(lot.cardSnap.val || 0) + " من المشتري";
+    else if (res.resolved === "randomCard") lot.resolvedNote = res.grantedName ? "🎲 تحوّلت إلى: " + res.grantedName : "🎲 لا بطاقة متاحة";
+    else if (res.resolved === "dud") lot.resolvedNote = "🕳️ مقلب — لا شيء";
   }
 
   // إرساء بطاقة محدّدة يدويًا (المشرف)
