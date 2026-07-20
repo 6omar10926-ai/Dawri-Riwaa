@@ -1104,12 +1104,17 @@
     const ci = App.getCardInstance(teamId, iid);
     if (!ci) return toast("البطاقة غير موجودة", "err");
     const eff = App.cardEffect(ci.eff);
-    const needsPlayer = eff && eff.needsTarget === "ownPlayer";
-    const players = App.teamPlayers(teamId);
+    const needsOwn = eff && eff.needsTarget === "ownPlayer";
+    const needsOpp = eff && eff.needsTarget === "opponentPlayer";
+    const isManual = eff && eff.manual;
+    const oppId = App.fixtureOpponent(fixtureId, teamId);
+    const players = needsOpp ? App.teamPlayers(oppId) : App.teamPlayers(teamId);
+    const pickLabel = needsOpp ? "اختر لاعب الخصم المستهدف" : "اختر اللاعب المستفيد";
     const body = `
       ${cardBadgeHTML(ci, {})}
-      ${needsPlayer ? `<label class="field" style="margin-top:10px"><span>اختر اللاعب المستفيد</span>
+      ${needsOwn || needsOpp ? `<label class="field" style="margin-top:10px"><span>${pickLabel}</span>
         <select id="commit-player"><option value="">—</option>${players.map((p) => `<option value="${p.id}">${esc(p.name)}${p.number ? " #" + esc(p.number) : ""}</option>`).join("")}</select></label>` : ""}
+      ${isManual ? `<div class="small" style="color:var(--gold);margin-top:8px">🛠️ بطاقة تدخّل: بعد التأكيد يصل تنبيه للمشرف لتنفيذها.</div>` : ""}
       <div class="small" style="color:var(--danger);margin-top:8px">بعد التأكيد تُقفل البطاقة لهذه المباراة ولا يمكنك التراجع.</div>`;
     modal({
       title: "تأكيد تفعيل: " + ci.name,
@@ -1118,9 +1123,9 @@
       onOpen(root, close) {
         $("[data-save]", root).onclick = () => {
           const opts = {};
-          if (needsPlayer) {
+          if (needsOwn || needsOpp) {
             const pid = $("#commit-player", root).value;
-            if (!pid) return toast("اختر لاعبًا من فريقك", "err");
+            if (!pid) return toast(needsOpp ? "اختر لاعبًا من الخصم" : "اختر لاعبًا من فريقك", "err");
             opts.targetPlayerId = pid;
           }
           const res = App.commitCard(teamId, iid, fixtureId, opts);
@@ -1555,11 +1560,33 @@
       </div>`;
     }).join("");
 
+    // 3) بطاقات التدخّل اليدوي المعلّقة — تحتاج تنفيذ المشرف
+    const pending = App.pendingManualCards();
+    const pendingHTML = pending.length
+      ? `<div class="section-title" style="margin:14px 0 8px"><h2 style="font-size:15px">🛠️ بطاقات تحتاج تنفيذك</h2><span class="hint">فعّلها اللاعبون — نفّذها يدويًا ثم علّمها</span></div>
+        <div class="grid cols-2">${pending.map((it) => {
+          const t = App.getTeam(it.teamId);
+          const c = it.card;
+          const fx = c.fixtureId ? App.getFixture(c.fixtureId) : null;
+          const opp = fx ? App.getTeam(App.fixtureOpponent(c.fixtureId, it.teamId)) : null;
+          const tgt = c.targetPlayerId ? App.getPlayer(c.targetPlayerId) : null;
+          const meta = [
+            t ? "من: " + t.name : "",
+            opp ? "ضد: " + opp.name : "",
+            tgt ? "🎯 " + tgt.name : "",
+          ].filter(Boolean).join(" • ");
+          const foot = `<div class="row" style="gap:6px;margin-top:8px"><button class="btn sm primary" data-action="card-exec" data-id="${it.teamId}::${c.iid}">✔ نُفّذت</button></div>`;
+          return cardBadgeHTML(c, { rightHTML: `<span class="chip" style="font-size:10px;background:var(--gold);color:#111">تنفيذ</span>`, footHTML: `<div class="small muted" style="margin-top:4px">${esc(meta)}</div>${foot}` });
+        }).join("")}</div>`
+      : "";
+
     return `<div class="section-title"><h2>🃏 البطاقات المميّزة</h2><span class="hint">مكتبة الأوراق • تنزيلها في المزاد • مخزون الفرق</span></div>
       <div class="card" style="background:#0e1830">
         <p class="muted small" style="margin:0">نزّل أي بطاقة في المزاد وتحكّم بمدّتها وسعر بدايتها. الفريق الفائز تدخل بطاقته مخزونه،
-        ويفعّلها رئيسه من شاشة التشكيلة (تأكيد ثم قفل)، فيُطبَّق أثرها تلقائيًا عند تسجيل تلك المباراة.</p>
+        ويفعّلها رئيسه من شاشة التشكيلة (تأكيد ثم قفل). البطاقات المؤتمتة يُطبَّق أثرها تلقائيًا عند تسجيل المباراة،
+        وبطاقات التدخّل تظهر لك هنا لتنفّذها يدويًا.</p>
       </div>
+      ${pendingHTML}
       <div class="section-title" style="margin:14px 0 8px"><h2 style="font-size:15px">المكتبة</h2>
         <div class="spacer"></div>
         <button class="btn sm primary" data-action="card-add">＋ بطاقة مخصّصة</button>
@@ -1571,9 +1598,10 @@
 
   // خيارات أنواع الأثر (لمحرّر البطاقة المخصّصة)
   function effectOptions(sel) {
-    return App.CARD_EFFECTS.map(
-      (e) => `<option value="${e.key}" ${e.key === sel ? "selected" : ""}>${esc(e.label)}</option>`
-    ).join("");
+    const opt = (e) => `<option value="${e.key}" ${e.key === sel ? "selected" : ""}>${esc(e.label)}</option>`;
+    const auto = App.CARD_EFFECTS.filter((e) => !e.manual).map(opt).join("");
+    const manual = App.CARD_EFFECTS.filter((e) => e.manual).map(opt).join("");
+    return `<optgroup label="مؤتمتة (تلقائية)">${auto}</optgroup><optgroup label="تدخّل يدوي (ينفّذها المشرف)">${manual}</optgroup>`;
   }
 
   // نافذة: تنزيل بطاقة في المزاد (مدّة + سعر بداية)
@@ -1891,6 +1919,10 @@
       case "card-uncommit": {
         const [tid, iid] = String(id).split("::");
         App.uncommitCard(tid, iid); toast("فُكّ قفل البطاقة", "ok"); return render();
+      }
+      case "card-exec": {
+        const [tid, iid] = String(id).split("::");
+        App.markCardExecuted(tid, iid); toast("عُلّمت البطاقة كمُنفّذة", "ok"); return render();
       }
     }
   }

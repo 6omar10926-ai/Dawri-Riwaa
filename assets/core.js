@@ -180,8 +180,23 @@
     { key: "grantMoney",     label: "منحة مالية",       valueKind: "money",  scope: "self",     needsTarget: null,        hint: "يُضاف المبلغ لميزانية فريقك." },
     { key: "fineOpponent",   label: "غرامة على الخصم",  valueKind: "money",  scope: "opponent", needsTarget: null,        hint: "يُخصم المبلغ من ميزانية الخصم." },
     { key: "boostRating",    label: "رفع تقييم لاعب",   valueKind: "rating", scope: "self",     needsTarget: "ownPlayer", hint: "تُضاف النقاط لتقييم لاعب تختاره من فريقك." },
+    // ---- آثار مؤتمتة إضافية ----
+    { key: "goalMultiplierAll", label: "مضاعفة كل الأهداف", valueKind: "none", scope: "self", needsTarget: null, hint: "كل أهداف فريقك في هذه المباراة تُحتسب ضِعفين في النتيجة." },
+    { key: "doublePenaltyGoal", label: "مضاعفة هدف البلنتي", valueKind: "none", scope: "self", needsTarget: null, hint: "كل هدف بلنتي لفريقك يُحتسب هدفين في النتيجة." },
+    { key: "cleanSheetBonus",   label: "مكافأة الشباك النظيفة", valueKind: "money", scope: "self", needsTarget: null, hint: "لو لم يستقبل فريقك أي هدف، يُضاف المبلغ لميزانيته." },
+    { key: "teamRatingBoost",   label: "رفع تقييم كل الفريق", valueKind: "rating", scope: "self", needsTarget: null, hint: "تُضاف النقاط لتقييم كل لاعب شارك في المباراة من فريقك." },
+    { key: "ratingProtect",     label: "تحصين تقييم لاعب", valueKind: "none", scope: "self", needsTarget: "ownPlayer", hint: "تُلغى كل الخصومات على تقييم لاعب تختاره في هذه المباراة." },
+    { key: "investment",        label: "استثمار (مضاعف لو فزت)", valueKind: "money", scope: "self", needsTarget: null, hint: "يُخصم المبلغ الآن، ويُعاد لك ضِعفه لو فزت بالمباراة." },
+    { key: "fineImmunity",      label: "حماية من الغرامة", valueKind: "none", scope: "self", needsTarget: null, hint: "تُلغى غرامة واحدة يوجّهها الخصم لفريقك في هذه المباراة." },
+    // ---- آثار تدخّل يدوي (ينفّذها المشرف) — لا تُطبَّق تلقائيًا ----
+    { key: "banPlayer",     label: "إيقاف لاعب الخصم",  valueKind: "none", scope: "opponent", needsTarget: "opponentPlayer", manual: true, hint: "يُمنع لاعب مختار من الخصم من اللعب — ينفّذها المشرف." },
+    { key: "freezeStar",    label: "تجميد نجم الخصم",   valueKind: "none", scope: "opponent", needsTarget: "opponentPlayer", manual: true, hint: "يُجمّد لاعب مختار من الخصم أسبوعًا — ينفّذها المشرف." },
+    { key: "revealLineup",  label: "كشف تشكيلة الخصم",  valueKind: "none", scope: "opponent", needsTarget: null, manual: true, hint: "تُكشف لك تشكيلة الخصم قبل المباراة — ينفّذها المشرف." },
+    { key: "swapPlayer",    label: "مبادلة لاعب",       valueKind: "none", scope: "opponent", needsTarget: "opponentPlayer", manual: true, hint: "مبادلة لاعب من الخصم بلاعب من فريقك — ينفّذها المشرف." },
+    { key: "stealCard",     label: "سرقة بطاقة الخصم",  valueKind: "none", scope: "opponent", needsTarget: null, manual: true, hint: "تسحب بطاقة عشوائية من مخزون الخصم — ينفّذها المشرف." },
   ];
   App.cardEffect = (key) => App.CARD_EFFECTS.find((e) => e.key === key) || null;
+  App.isManualEffect = (key) => { const e = App.cardEffect(key); return !!(e && e.manual); };
 
   // مكتبة البطاقات الافتراضية (يديرها المشرف: تعديل/تعطيل/إضافة/حذف).
   App.DEFAULT_CARD_LIBRARY = [
@@ -196,6 +211,27 @@
     { id: "c_boost5",       icon: "🚀",  name: "ترقية لاعب",      eff: "boostRating",    val: 5,         desc: "+5 لتقييم لاعب تختاره من فريقك في هذه المباراة." },
     { id: "c_boost3",       icon: "💫",  name: "نجم المباراة",    eff: "boostRating",    val: 3,         desc: "+3 لتقييم لاعب تختاره من فريقك." },
     { id: "c_boost1",       icon: "➕",  name: "نقطة إضافية",     eff: "boostRating",    val: 1,         desc: "+1 لتقييم لاعب تختاره من فريقك." },
+    { id: "c_boost10",      icon: "🌠",  name: "نجم خارق",        eff: "boostRating",    val: 10,        desc: "+10 لتقييم لاعب تختاره من فريقك في هذه المباراة." },
+    // ---- بطاقات مؤتمتة إضافية ----
+    { id: "c_all_goals_x2", icon: "🎯🎯", name: "كل الأهداف مضاعفة", eff: "goalMultiplierAll", val: 0,     desc: "كل أهداف فريقك في هذه المباراة تُحتسب ضِعفين." },
+    { id: "c_pen_x2",       icon: "🥅",  name: "بلنتي مضاعف",     eff: "doublePenaltyGoal", val: 0,       desc: "كل هدف بلنتي لفريقك يُحتسب هدفين." },
+    { id: "c_clean_sheet",  icon: "🧱",  name: "شباك نظيفة",      eff: "cleanSheetBonus",  val: 1_500_000, desc: "لو لم يستقبل فريقك أي هدف، مكافأة مالية فورية." },
+    { id: "c_team_boost",   icon: "🌟",  name: "دفعة معنوية",     eff: "teamRatingBoost",  val: 2,        desc: "+2 لتقييم كل لاعب شارك في المباراة من فريقك." },
+    { id: "c_protect",      icon: "🛡️", name: "تحصين تقييم",     eff: "ratingProtect",    val: 0,        desc: "تُلغى كل الخصومات على تقييم لاعب تختاره في هذه المباراة." },
+    { id: "c_invest",       icon: "📈",  name: "استثمار",         eff: "investment",       val: 2_000_000, desc: "ادفع مبلغًا الآن واسترده ضِعفًا لو فزت بالمباراة." },
+    { id: "c_fine_immune",  icon: "🏦",  name: "حماية من الغرامة", eff: "fineImmunity",    val: 0,        desc: "تُلغى غرامة واحدة يوجّهها الخصم لفريقك." },
+    { id: "c_grant1",       icon: "💰",  name: "منحة صغيرة",      eff: "grantMoney",       val: 1_000_000, desc: "دعم مالي فوري (مليون) لميزانية فريقك." },
+    { id: "c_grant5",       icon: "🤑",  name: "منحة كبيرة",      eff: "grantMoney",       val: 5_000_000, desc: "دعم مالي فوري (5م) لميزانية فريقك." },
+    { id: "c_fine1",        icon: "✂️",  name: "غرامة خفيفة",     eff: "fineOpponent",     val: 1_000_000, desc: "تُخصم غرامة (مليون) من ميزانية الخصم." },
+    { id: "c_fine5",        icon: "💥",  name: "غرامة قاسية",     eff: "fineOpponent",     val: 5_000_000, desc: "تُخصم غرامة (5م) من ميزانية الخصم." },
+    { id: "c_cancel2goals", icon: "🚧",  name: "إلغاء هدفين",     eff: "cancelGoalOpp",    val: 2,        desc: "يُلغى هدفان من رصيد الخصم في هذه المباراة." },
+    { id: "c_win_x3",       icon: "🏆",  name: "فوز ثلاثي",       eff: "winMultiplier",    val: 2,        desc: "مكافأة الفوز في هذه المباراة تُضاف مرتين إضافيتين." },
+    // ---- بطاقات تدخّل يدوي (ينفّذها المشرف) ----
+    { id: "c_ban",          icon: "🚫",  name: "إيقاف لاعب",      eff: "banPlayer",        val: 0,        desc: "امنع لاعبًا من الخصم من اللعب في مباراته — ينفّذها المشرف." },
+    { id: "c_freeze",       icon: "🧊",  name: "تجميد نجم",       eff: "freezeStar",       val: 0,        desc: "جمّد لاعبًا من الخصم أسبوعًا — ينفّذها المشرف." },
+    { id: "c_reveal",       icon: "👁️", name: "كشف تشكيلة",      eff: "revealLineup",     val: 0,        desc: "اكشف تشكيلة الخصم قبل المباراة — ينفّذها المشرف." },
+    { id: "c_swap",         icon: "🔀",  name: "مبادلة لاعب",     eff: "swapPlayer",       val: 0,        desc: "بادل لاعبًا من الخصم بلاعب من فريقك — ينفّذها المشرف." },
+    { id: "c_steal",        icon: "🃏",  name: "سرقة بطاقة",      eff: "stealCard",        val: 0,        desc: "اسحب بطاقة عشوائية من مخزون الخصم — ينفّذها المشرف." },
   ];
   const defaultCardLibrary = () =>
     App.DEFAULT_CARD_LIBRARY.map((c) => Object.assign({ enabled: true }, c));
@@ -1216,6 +1252,11 @@
       const p = App.getPlayer(opts.targetPlayerId);
       if (!p || p.teamId !== teamId) return { ok: false, msg: "اختر لاعبًا من فريقك" };
       c.targetPlayerId = opts.targetPlayerId;
+    } else if (eff && eff.needsTarget === "opponentPlayer") {
+      const oppId = App.fixtureOpponent(fixtureId, teamId);
+      const p = App.getPlayer(opts.targetPlayerId);
+      if (!p || p.teamId !== oppId) return { ok: false, msg: "اختر لاعبًا من فريق الخصم" };
+      c.targetPlayerId = opts.targetPlayerId;
     }
     c.status = "committed";
     c.fixtureId = fixtureId;
@@ -1229,6 +1270,35 @@
     c.status = "owned";
     c.fixtureId = null;
     c.targetPlayerId = null;
+    c.executed = false;
+    save();
+  };
+
+  // خصم فريقٍ في مباراة قادمة (من الجدول)
+  App.fixtureOpponent = function (fixtureId, teamId) {
+    const f = App.getFixture(fixtureId);
+    if (!f) return null;
+    return f.homeTeamId === teamId ? f.awayTeamId : f.homeTeamId;
+  };
+
+  // البطاقات اليدوية التي تحتاج تنفيذ المشرف (مفعّلة/مُستخدمة ولم تُنفّذ بعد)
+  App.pendingManualCards = function () {
+    const out = [];
+    (App.state.teams || []).forEach((t) => {
+      (t.cards || []).forEach((c) => {
+        if (!App.isManualEffect(c.eff)) return;
+        if (c.status !== "committed" && c.status !== "consumed") return;
+        if (c.executed) return;
+        out.push({ teamId: t.id, card: c });
+      });
+    });
+    return out;
+  };
+  // تعليم بطاقة يدوية أنها نُفّذت
+  App.markCardExecuted = function (teamId, iid) {
+    const c = App.getCardInstance(teamId, iid);
+    if (!c) return;
+    c.executed = true;
     save();
   };
 
@@ -1269,11 +1339,21 @@
 
   // تعديل النتيجة بأثر البطاقات (يُستدعى داخل computeMatchScores)
   function applyCardScoreDeltas(match, score) {
+    // عدد أحداث نوع معيّن لفريق داخل المباراة
+    const countEv = (teamId, pred) =>
+      (match.events || []).filter((ev) => ev.teamId === teamId && pred(ev)).length;
     (match.cardsApplied || []).forEach((c) => {
       const isHome = c.teamId === match.homeTeamId;
       if (c.eff === "doubleGoal") {
         if (isHome && score.home >= 1) score.home += 1;
         else if (!isHome && score.away >= 1) score.away += 1;
+      } else if (c.eff === "goalMultiplierAll") {
+        // كل الأهداف المسجّلة لفريق (أحداث تُحسب هدفًا) تُضاف مرة أخرى
+        const goals = countEv(c.teamId, (ev) => { const d = App.matchAction(ev.type); return d && d.scores; });
+        if (isHome) score.home += goals; else score.away += goals;
+      } else if (c.eff === "doublePenaltyGoal") {
+        const pens = countEv(c.teamId, (ev) => ev.type === "penaltyGoal");
+        if (isHome) score.home += pens; else score.away += pens;
       } else if (c.eff === "cancelGoalOpp") {
         const n = Math.max(0, c.val || 0) || 1;
         if (isHome) score.away = Math.max(0, score.away - n);
@@ -1286,6 +1366,12 @@
   function applyCardFinancials(match) {
     const rules = App.state.moneyRules;
     const id = match.id;
+    // الفرق التي تحمل "حماية من الغرامة" مفعّلة (لكل حماية تُلغى غرامة واحدة)
+    const immunity = {};
+    (match.cardsApplied || []).forEach((c) => {
+      if (c.eff === "fineImmunity") immunity[c.teamId] = (immunity[c.teamId] || 0) + 1;
+    });
+    const scoredAgainst = (team) => (team === match.homeTeamId ? match.awayScore : match.homeScore);
     (match.cardsApplied || []).forEach((c) => {
       const team = c.teamId;
       const opp = team === match.homeTeamId ? match.awayTeamId : match.homeTeamId;
@@ -1294,7 +1380,14 @@
         (match.result === "away" && team === match.awayTeamId);
       if (c.eff === "grantMoney") {
         addTransaction(team, c.val || 0, "بطاقة: " + c.name, { refType: "match", refId: id });
+      } else if (c.eff === "cleanSheetBonus") {
+        if (scoredAgainst(team) === 0) addTransaction(team, c.val || 0, "بطاقة: " + c.name, { refType: "match", refId: id });
+      } else if (c.eff === "investment") {
+        addTransaction(team, -(c.val || 0), "بطاقة: " + c.name + " (استثمار)", { refType: "match", refId: id });
+        if (won) addTransaction(team, (c.val || 0) * 2, "بطاقة: " + c.name + " (عائد)", { refType: "match", refId: id });
       } else if (c.eff === "fineOpponent") {
+        // إن كان الخصم يملك حماية من الغرامة، تُلغى واحدة
+        if (immunity[opp] > 0) { immunity[opp]--; return; }
         addTransaction(opp, -(c.val || 0), "بطاقة: " + c.name + " (غرامة)", { refType: "match", refId: id });
       } else if (c.eff === "winMultiplier") {
         if (won) addTransaction(team, (rules.win || 0) * (c.val || 1), "بطاقة: " + c.name, { refType: "match", refId: id });
@@ -1323,28 +1416,58 @@
   }
 
   // تقييم البطاقات (تُستدعى داخل applyMatchRatings)
+  // يدفع تعديلًا على تقييم لاعب مع تسجيله في السجلّ (مربوطًا بالمباراة)
+  function pushCardRating(playerId, week, delta, matchId, cardName) {
+    if (!playerId || !delta) return;
+    const oldRating = App.playerWeekRating(playerId, week);
+    App.state.ratingLog.push({
+      id: uid(),
+      playerId,
+      week,
+      date: new Date().toISOString(),
+      delta,
+      breakdown: [{ key: "card", label: "بطاقة: " + cardName, count: 1, pts: delta, subtotal: delta }],
+      note: "بطاقة: " + cardName,
+      matchId,
+    });
+    const newRating = App.playerWeekRating(playerId, week);
+    const last = App.state.ratingLog[App.state.ratingLog.length - 1];
+    last.oldRating = oldRating;
+    last.newRating = newRating;
+    last.applied = newRating - oldRating;
+  }
+  // مجموع نقاط التقييم السالبة (الخصومات) للاعب من أحداث المباراة
+  function playerNegativeRatingInMatch(playerId, match) {
+    const rules = App.state.ratingRules;
+    const p = App.getPlayer(playerId);
+    let neg = 0;
+    (match.events || []).forEach((ev) => {
+      if (ev.playerId !== playerId) return;
+      const rKey = App.actionRatingKey(App.matchAction(ev.type), p);
+      if (!rKey) return;
+      const pts = rules[rKey] || 0;
+      if (pts < 0) neg += pts;
+    });
+    return neg; // قيمة سالبة أو صفر
+  }
   function applyCardRatings(match) {
+    const week = match.week;
     (match.cardsApplied || []).forEach((c) => {
-      if (c.eff !== "boostRating" || !c.targetPlayerId || !c.val) return;
-      const p = App.getPlayer(c.targetPlayerId);
-      if (!p) return;
-      const week = match.week;
-      const oldRating = App.playerWeekRating(c.targetPlayerId, week);
-      App.state.ratingLog.push({
-        id: uid(),
-        playerId: c.targetPlayerId,
-        week,
-        date: new Date().toISOString(),
-        delta: c.val,
-        breakdown: [{ key: "card", label: "بطاقة: " + c.name, count: 1, pts: c.val, subtotal: c.val }],
-        note: "بطاقة: " + c.name,
-        matchId: match.id,
-      });
-      const newRating = App.playerWeekRating(c.targetPlayerId, week);
-      const last = App.state.ratingLog[App.state.ratingLog.length - 1];
-      last.oldRating = oldRating;
-      last.newRating = newRating;
-      last.applied = newRating - oldRating;
+      if (c.eff === "boostRating") {
+        if (c.targetPlayerId && c.val) pushCardRating(c.targetPlayerId, week, c.val, match.id, c.name);
+      } else if (c.eff === "teamRatingBoost" && c.val) {
+        // كل لاعب شارك (له حدث) في هذه المباراة من فريق البطاقة
+        const seen = new Set();
+        (match.events || []).forEach((ev) => {
+          if (ev.teamId !== c.teamId || !ev.playerId || seen.has(ev.playerId)) return;
+          seen.add(ev.playerId);
+          pushCardRating(ev.playerId, week, c.val, match.id, c.name);
+        });
+      } else if (c.eff === "ratingProtect" && c.targetPlayerId) {
+        // يلغي كل الخصومات على اللاعب (يضيف ما يعادل السالب)
+        const neg = playerNegativeRatingInMatch(c.targetPlayerId, match);
+        if (neg < 0) pushCardRating(c.targetPlayerId, week, -neg, match.id, c.name);
+      }
     });
   }
 
