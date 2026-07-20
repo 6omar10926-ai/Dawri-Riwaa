@@ -1610,9 +1610,10 @@
   // خيارات أنواع الأثر (لمحرّر البطاقة المخصّصة)
   function effectOptions(sel) {
     const opt = (e) => `<option value="${e.key}" ${e.key === sel ? "selected" : ""}>${esc(e.label)}</option>`;
-    const auto = App.CARD_EFFECTS.filter((e) => !e.manual).map(opt).join("");
+    const auto = App.CARD_EFFECTS.filter((e) => !e.manual && !e.instant).map(opt).join("");
+    const instant = App.CARD_EFFECTS.filter((e) => e.instant).map(opt).join("");
     const manual = App.CARD_EFFECTS.filter((e) => e.manual).map(opt).join("");
-    return `<optgroup label="مؤتمتة (تلقائية)">${auto}</optgroup><optgroup label="تدخّل يدوي (ينفّذها المشرف)">${manual}</optgroup>`;
+    return `<optgroup label="مؤتمتة (وقت المباراة)">${auto}</optgroup><optgroup label="فورية (عند الشراء)">${instant}</optgroup><optgroup label="تدخّل يدوي (ينفّذها المشرف)">${manual}</optgroup>`;
   }
 
   // نافذة: تنزيل بطاقة في سوق البطاقات (مدّة + سعر بداية)
@@ -1779,9 +1780,13 @@
     const bidsLog = lot.bids.length
       ? `<div class="small muted" style="margin-top:6px">أعلى مزايدة: <b style="color:${highTeam?.color}">${esc(highTeam?.name)}</b> — ${fmtMoney(highest.amount)} • (${lot.bids.length} مزايدة)</div>`
       : `<div class="small muted" style="margin-top:6px">لا مزايدات بعد • تبدأ من ${fmtMoney(lot.startPrice)}</div>`;
+    const revealNote = lot.status === "sold" && lot.resolvedNote
+      ? `<div class="small" style="margin-top:6px;color:var(--gold);font-weight:700">${esc(lot.resolvedNote)}</div>`
+      : "";
     return `<div class="card">
       <div class="row between">${badge}</div>
       <div style="margin-top:8px">${cardBadgeHTML(shown, {})}</div>
+      ${revealNote}
       ${bidsLog}
       ${controls}
     </div>`;
