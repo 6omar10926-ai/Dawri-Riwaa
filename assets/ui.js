@@ -3183,7 +3183,7 @@
   /* ---------- الإعدادات ---------- */
   function openSettings() {
     const c = App.state.club;
-    const rulesHTML = [...App.EVENTS.map((e) => [e.key, e.label]), ["win", App.RESULT_RULES.win.label], ["draw", App.RESULT_RULES.draw.label], ["teamOfWeek", App.AWARD_RULES.teamOfWeek.label], ["clubLineup", App.AWARD_RULES.clubLineup.label]]
+    const rulesHTML = [...App.EVENTS.map((e) => [e.key, e.label]), ["win", App.RESULT_RULES.win.label], ["draw", App.RESULT_RULES.draw.label], ["loss", App.RESULT_RULES.loss.label], ["teamOfWeek", App.AWARD_RULES.teamOfWeek.label], ["clubLineup", App.AWARD_RULES.clubLineup.label]]
       .map(
         ([k, label]) => `<div class="stat-input">
           <span>${esc(label)}</span>
