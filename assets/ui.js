@@ -293,6 +293,7 @@
     fixtures: { key: "fixtures", label: "القادمة", ico: "📅" },
     market: { key: "market", label: "السوق", ico: "💰" },
     cardmarket: { key: "cardmarket", label: "سوق البطاقات", ico: "🃏" },
+    mycards: { key: "mycards", label: "بطاقاتي", ico: "🎴" },
     ledger: { key: "ledger", label: "الحسبة", ico: "📒" },
     lineups: { key: "lineups", label: "التشكيلات", ico: "🧩" },
     cards: { key: "cards", label: "البطاقات", ico: "🗂️" },
@@ -301,7 +302,7 @@
   function roleTabs() {
     if (isAdmin())
       return [TAB.dashboard, TAB.teams, TAB.players, TAB.matches, TAB.fixtures, TAB.market, TAB.cardmarket, TAB.cards, TAB.ledger];
-    if (isPresident()) return [TAB.lineups, TAB.market, TAB.cardmarket];
+    if (isPresident()) return [TAB.lineups, TAB.mycards, TAB.market, TAB.cardmarket];
     // عرض عام (سوق البطاقات للمشاهدة فقط — بدون مزايدة)
     return [TAB.dashboard, TAB.teams, TAB.players, TAB.matches, TAB.fixtures, TAB.cardmarket];
   }
@@ -1885,6 +1886,78 @@
     render();
   }
 
+  /* =========================================================
+     بطاقاتي — مخزون رئيس النادي + سجلّ شرائه
+     ========================================================= */
+  function viewMyCards() {
+    const teamId = myTeamId();
+    const team = App.getTeam(teamId);
+    if (!team) return `<div class="empty"><div class="big">🎴</div>هذه الصفحة لرؤساء الأندية.</div>`;
+
+    const owned = App.teamCardsByStatus(teamId, "owned");
+    const committed = App.teamCardsByStatus(teamId, "committed");
+    const consumed = App.teamCardsByStatus(teamId, "consumed");
+
+    // بطاقة في المخزون (مع أثرها وحالتها)
+    const cardCell = (ci, extraFoot) => {
+      const eff = App.cardEffect(ci.eff);
+      const sub = (eff ? eff.label : "") + " " + App.cardValueText(ci);
+      return `<div class="card" style="padding:12px">
+        <div class="row" style="gap:10px;align-items:flex-start">
+          <span style="font-size:26px;line-height:1">${esc(ci.icon || "🃏")}</span>
+          <div style="flex:1;min-width:0">
+            <b style="font-size:14px">${esc(ci.name)}</b>
+            <div class="small" style="color:var(--gold)">${esc(sub)}</div>
+            ${ci.desc ? `<div class="small muted" style="margin-top:3px">${esc(ci.desc)}</div>` : ""}
+            ${extraFoot || ""}
+          </div>
+        </div>
+      </div>`;
+    };
+
+    const ownedHTML = owned.length
+      ? `<div class="grid cols-2">${owned.map((ci) => cardCell(ci, `<div class="small muted" style="margin-top:6px">تُفعَّل من شاشة التشكيلة قبل المباراة.</div>`)).join("")}</div>`
+      : `<div class="empty"><div class="big">🎴</div>لا بطاقات متاحة في مخزونك.<br><span class="small">اشترِ من سوق البطاقات.</span></div>`;
+
+    const committedHTML = committed.length
+      ? `<div class="grid cols-2">${committed.map((ci) => {
+          const fx = ci.fixtureId ? App.getFixture(ci.fixtureId) : null;
+          const opp = fx ? App.getTeam(App.fixtureOpponent(ci.fixtureId, teamId)) : null;
+          const tgt = ci.targetPlayerId ? App.getPlayer(ci.targetPlayerId) : null;
+          const meta = [opp ? "ضد " + opp.name : "", tgt ? "🎯 " + tgt.name : "", "🔒 مقفلة"].filter(Boolean).join(" • ");
+          return cardCell(ci, `<div class="small" style="margin-top:6px;color:var(--brand)">${esc(meta)}</div>`);
+        }).join("")}</div>`
+      : "";
+
+    // سجلّ الشراء من الدفتر (شراء بطاقة: ...)
+    const buys = App.state.ledger
+      .filter((l) => l.teamId === teamId && typeof l.reason === "string" && l.reason.indexOf("شراء بطاقة") === 0)
+      .slice().reverse();
+    const totalSpent = buys.reduce((s, l) => s + Math.abs(l.amount), 0);
+    const buysHTML = buys.length
+      ? `<div style="overflow-x:auto"><table class="tbl" style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            <th style="text-align:right;padding:8px;border-bottom:1px solid var(--line)">البطاقة</th>
+            <th style="text-align:left;padding:8px;border-bottom:1px solid var(--line)">السعر</th>
+            <th style="text-align:center;padding:8px;border-bottom:1px solid var(--line)">الأسبوع</th>
+          </tr></thead>
+          <tbody>${buys.map((l) => `<tr>
+            <td style="padding:8px;border-bottom:1px solid var(--line)">${esc(l.reason.replace("شراء بطاقة: ", "").trim() || "بطاقة")}</td>
+            <td style="padding:8px;border-bottom:1px solid var(--line);text-align:left;font-variant-numeric:tabular-nums">${fmtMoney(Math.abs(l.amount))}</td>
+            <td style="padding:8px;border-bottom:1px solid var(--line);text-align:center">${l.week || "—"}</td>
+          </tr>`).join("")}</tbody>
+        </table></div>
+        <div class="small muted" style="margin-top:8px">الإجمالي المصروف على البطاقات: <b style="color:var(--ink)">${fmtMoney(totalSpent)}</b> • عدد الصفقات: ${buys.length}</div>`
+      : `<div class="small muted">لم تشترِ أي بطاقة بعد.</div>`;
+
+    return `<div class="section-title"><h2>🎴 بطاقاتي</h2><span class="hint">${esc(team.name)} • الميزانية ${fmtMoney(team.budget)}</span></div>
+      <div class="section-title" style="margin:8px 0 8px"><h2 style="font-size:15px">المتاحة (${owned.length})</h2></div>
+      ${ownedHTML}
+      ${committed.length ? `<div class="section-title" style="margin:16px 0 8px"><h2 style="font-size:15px">مفعّلة لمباراة (${committed.length})</h2></div>${committedHTML}` : ""}
+      <div class="section-title" style="margin:18px 0 8px"><h2 style="font-size:15px">🧾 سجلّ الشراء</h2>${consumed.length ? `<span class="hint">مُستخدمة سابقًا: ${consumed.length}</span>` : ""}</div>
+      <div class="card">${buysHTML}</div>`;
+  }
+
   const VIEWS = {
     dashboard: viewDashboard,
     teams: viewTeams,
@@ -1893,6 +1966,7 @@
     fixtures: viewFixtures,
     market: viewMarket,
     cardmarket: viewCardMarket,
+    mycards: viewMyCards,
     ledger: viewLedger,
     lineups: viewLineups,
     cards: viewCards,
