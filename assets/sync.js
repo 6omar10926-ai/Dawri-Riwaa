@@ -16,6 +16,9 @@
     lastRev: null,
     ref: null,
     seeded: false,
+    // عدّاد نسخة تصاعدي: لا نطمس السحابة إلا إذا كانت نسختنا مبنية على أحدث ما رأيناه.
+    // يُقدَّم فقط عند "تطبيق" حالة قادمة فعلًا (لا عند التأجيل)، فيُرفض أي رفع من نسخة قديمة.
+    ver: 0,
   });
 
   const uid = App.util.uid;
@@ -46,30 +49,59 @@
     const clean = Object.assign({}, obj);
     delete clean.__rev;
     delete clean.__at;
+    delete clean.__ver;
     return clean;
   }
 
   // آخر حالة سحابية وصلت أثناء فتح نافذة منبثقة (تُطبَّق عند إغلاقها)
   let pendingRemote = null;
+  let pendingRemoteVer = 0;
+
+  // يقدّم عدّاد النسخة إلى قيمة الحالة المُطبَّقة (لا يتراجع أبدًا)
+  function adoptVer(v) {
+    if (typeof v === "number" && v > cloud.ver) cloud.ver = v;
+  }
 
   // يستدعيه ui.js عند إغلاق آخر نافذة منبثقة: يطبّق الحالة المؤجّلة إن وُجدت.
   App.onModalsClosed = function () {
     if (!pendingRemote) return;
     const clean = pendingRemote;
+    const ver = pendingRemoteVer;
     pendingRemote = null;
+    pendingRemoteVer = 0;
     App.applyCloudState(clean);
+    adoptVer(ver); // النسخة تُقدَّم الآن فقط لأننا طبّقنا فعلًا
     if (App.render) App.render();
   };
 
+  // رفع الحالة عبر معاملة تُرفض إن كانت السحابة أحدث مما رأيناه (حماية من طمس نسخة قديمة).
   function pushState() {
     if (!cloud.enabled || !cloud.ref) return;
     const rev = uid();
-    cloud.lastRev = rev;
-    const payload = Object.assign({}, App.state, { __rev: rev, __at: Date.now() });
-    cloud.ref.set(payload).catch((e) => {
-      console.error("فشل رفع الحالة", e);
-      if (App.toast) App.toast("تعذّر الرفع للسحابة", "err");
-    });
+    const baseVer = cloud.ver || 0;
+    cloud.ref.transaction(
+      (cur) => {
+        if (cur) {
+          const curVer = typeof cur.__ver === "number" ? cur.__ver : 0;
+          // السحابة تقدّمت بما لم نطبّقه بعد → حالتنا قديمة، لا نكتب (نُلغي المعاملة)
+          if (curVer > baseVer) return undefined;
+        }
+        cloud.lastRev = rev;
+        return Object.assign({}, App.state, { __rev: rev, __at: Date.now(), __ver: baseVer + 1 });
+      },
+      (err, committed) => {
+        if (err) {
+          console.error("فشل رفع الحالة", err);
+          if (App.toast) App.toast("تعذّر الرفع للسحابة", "err");
+          return;
+        }
+        if (committed) {
+          cloud.ver = baseVer + 1;
+        }
+        // لو لم تُلتزم: نسختنا كانت قديمة، والمستمع سيسلّمنا الأحدث فنبني عليها.
+      },
+      false // لا نطبّق محليًا بشكل متفائل — ننتظر الالتزام الفعلي
+    );
   }
 
   function initCloud() {
@@ -109,17 +141,22 @@
             return;
           }
           cloud.seeded = true;
-          // تجاهل صدى كتابتنا نفسها
-          if (remote.__rev && remote.__rev === cloud.lastRev) return;
+          const incomingVer = typeof remote.__ver === "number" ? remote.__ver : 0;
+          // تجاهل صدى كتابتنا نفسها (لكن اعتمد نسختها)
+          if (remote.__rev && remote.__rev === cloud.lastRev) { adoptVer(incomingVer); return; }
           cloud.lastRev = remote.__rev || null;
           const clean = stripMeta(remote);
           // نافذة منبثقة مفتوحة (مثلاً تسجيل مباراة) → أجّل التطبيق حتى تُغلق،
           // حتى لا نمسح النافذة وما أدخله المستخدم بداخلها.
+          // مهم: لا نقدّم عدّاد النسخة هنا — يبقى رفعنا القادم "قديمًا" فيُرفض
+          // بدل أن يطمس ما في السحابة (تفاديًا لاستعادة فلوس/مزايدات).
           if (App.modalsOpen && App.modalsOpen()) {
             pendingRemote = clean;
+            pendingRemoteVer = incomingVer;
             return;
           }
           App.applyCloudState(clean);
+          adoptVer(incomingVer); // النسخة تُقدَّم فقط لأننا طبّقنا فعلًا
           if (App.render) App.render();
         },
         (err) => {
