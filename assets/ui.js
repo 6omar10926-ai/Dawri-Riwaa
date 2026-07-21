@@ -655,6 +655,25 @@
     </div>`;
   }
 
+  // سجلّ كل المزايدات على عنصر (الأحدث = الأعلى في الأعلى، لأن المزايدة تصاعدية)
+  function bidHistoryHTML(lot, opts) {
+    opts = opts || {};
+    const mt = opts.mt != null ? opts.mt : 8;
+    if (!lot.bids || !lot.bids.length)
+      return `<div class="small muted" style="margin-top:${mt}px">لا مزايدات بعد${opts.startFrom ? " • تبدأ من " + fmtMoney(lot.startPrice) : ""}</div>`;
+    const rows = lot.bids.slice().reverse().map((bid, i) => {
+      const t = App.getTeam(bid.teamId);
+      const top = i === 0;
+      const time = bid.at ? new Date(bid.at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" }) : "";
+      return `<div class="row between" style="padding:3px 0;border-bottom:1px solid var(--line);${top ? "font-weight:800" : "opacity:.72"}">
+        <span style="min-width:0"><span style="display:inline-block;width:9px;height:9px;border-radius:3px;background:${t ? t.color : "#888"};margin-inline-end:6px"></span>${esc(t ? t.name : "?")}${top ? " 👑" : ""}</span>
+        <span style="white-space:nowrap"><span style="font-variant-numeric:tabular-nums">${fmtMoney(bid.amount)}</span>${time ? ` <span class="muted" style="font-size:10px">${time}</span>` : ""}</span>
+      </div>`;
+    }).join("");
+    return `<div class="small muted" style="margin-top:${mt}px;margin-bottom:2px">كل المزايدات (${lot.bids.length}):</div>
+      <div style="max-height:158px;overflow-y:auto">${rows}</div>`;
+  }
+
   // مرحلة التحضير: نُزّل اللاعبون ولم يبدأ المزاد
   function viewMarketStaging(mk) {
     // اللاعبون لا يُكشفون في التحضير إلا للمشرف — تفاديًا لمعرفة القادمين
@@ -734,9 +753,7 @@
                ${bidHint}
              </div>`;
         }
-        const bidsLog = lot.bids.length
-          ? `<div class="small muted" style="margin-top:8px">أعلى مزايدة: <b style="color:${highTeam?.color}">${esc(highTeam?.name)}</b> — ${fmtMoney(highest.amount)} • (${lot.bids.length} مزايدة)</div>`
-          : `<div class="small muted" style="margin-top:8px">لا مزايدات بعد</div>`;
+        const bidsLog = bidHistoryHTML(lot, { mt: 8 });
         return `<div class="card">
             <div class="row between">${badge}</div>
             <div style="margin-top:10px">${marketLotBodyHTML(lot)}</div>
@@ -1781,9 +1798,7 @@
         ${bidHint}
       </div>`;
     }
-    const bidsLog = lot.bids.length
-      ? `<div class="small muted" style="margin-top:6px">أعلى مزايدة: <b style="color:${highTeam?.color}">${esc(highTeam?.name)}</b> — ${fmtMoney(highest.amount)} • (${lot.bids.length} مزايدة)</div>`
-      : `<div class="small muted" style="margin-top:6px">لا مزايدات بعد • تبدأ من ${fmtMoney(lot.startPrice)}</div>`;
+    const bidsLog = bidHistoryHTML(lot, { mt: 6, startFrom: true });
     const revealNote = lot.status === "sold" && lot.resolvedNote
       ? `<div class="small" style="margin-top:6px;color:var(--gold);font-weight:700">${esc(lot.resolvedNote)}</div>`
       : "";
