@@ -38,6 +38,7 @@
     { key: "save", label: "تصدّي", scores: false, defAmount: 500_000, side: "team" },
     { key: "penaltySave", label: "تصدّي بلنتي", scores: false, defAmount: 2_000_000, side: "team" },
     { key: "freeKickSave", label: "تصدّي فاول", scores: false, defAmount: 1_000_000, side: "team" },
+    { key: "cleanSheet", label: "شباك نظيفة", scores: false, defAmount: 1_000_000, side: "team" },
     { key: "yellow", label: "كرت أصفر", scores: false, defAmount: -500_000, side: "team" },
     { key: "red", label: "كرت أحمر", scores: false, defAmount: -1_000_000, side: "team" },
     { key: "nutmeg", label: "تسطيح", scores: false, defAmount: -1_000_000, side: "team" },
@@ -46,6 +47,7 @@
   App.RESULT_RULES = {
     win: { label: "فوز بالمباراة", defAmount: 2_000_000 },
     draw: { label: "تعادل", defAmount: 1_000_000 },
+    loss: { label: "خسارة المباراة", defAmount: -1_000_000 },
   };
 
   App.AWARD_RULES = {
@@ -129,7 +131,7 @@
     { key: "save",         label: "تصدّي",                          money: true,  ratingKey: (p) => (p && p.position === GK ? "gkSave" : "outfieldSave") },
     { key: "penaltySave",  label: "تصدّي بلنتي",       money: true,  ratingKey: "gkSave" },
     { key: "freeKickSave", label: "تصدّي فاول",        money: true,  ratingKey: "gkSave" },
-    { key: "cleanSheet",   label: "شباك نظيفة",                      ratingKey: "cleanSheet" },
+    { key: "cleanSheet",   label: "شباك نظيفة",         money: true,  ratingKey: "cleanSheet" },
     { key: "yellow",       label: "كرت أصفر",          money: true,  ratingKey: "yellow" },
     { key: "red",          label: "كرت أحمر",          money: true,  ratingKey: "red" },
     { key: "nutmeg",       label: "تسطيح",             money: true },
@@ -733,7 +735,9 @@
       addTransaction(match.awayTeamId, rules.draw, "تعادل", { refType: "match", refId: id });
     } else {
       const winnerId = match.result === "home" ? match.homeTeamId : match.awayTeamId;
+      const loserId = match.result === "home" ? match.awayTeamId : match.homeTeamId;
       addTransaction(winnerId, rules.win, "فوز بالمباراة", { refType: "match", refId: id });
+      if (rules.loss) addTransaction(loserId, rules.loss, "خسارة المباراة", { refType: "match", refId: id });
     }
     // فلوس البطاقات المفعّلة (منحة/غرامة/مضاعفة/إلغاء خصم)
     applyCardFinancials(match);
