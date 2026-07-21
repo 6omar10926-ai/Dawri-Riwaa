@@ -1311,7 +1311,9 @@
      كل البطاقات تُعرض معًا، والفرق تزايد على أيّها في أي وقت.
      ولكل بطاقة مؤقّتها الخاص (endsAt): حين ينتهي وقتها تُرسى وحدها
      على أعلى مزايد، وتبقى بقية البطاقات مفتوحة بأوقاتها. */
-  App.CARD_MARKET_DURATION_MS = 120_000; // مدّة البطاقة الافتراضية
+  App.CARD_MARKET_DURATION_MS = 120_000;   // مدّة البطاقة الافتراضية
+  App.CARD_EXTEND_WINDOW_MS = 60_000;       // مزايدة في آخر دقيقة…
+  App.CARD_EXTEND_MS = 30_000;              // …تمدّد وقت البطاقة نصف دقيقة (منع القنص)
 
   App.cardMarketActive = () => !!(App.state.cardMarket && App.state.cardMarket.active);
 
@@ -1373,6 +1375,8 @@
     if (!cm || !cm.active) return { ok: false, msg: "لا توجد جولة بطاقات نشطة" };
     const lot = cm.lots.find((l) => l.id === lotId);
     if (!lot || lot.status !== "open") return { ok: false, msg: "المزايدة مغلقة" };
+    // انتهى وقت البطاقة → لا تُقبل أي مزايدة (حتى قبل الإرساء الفعلي)
+    if (typeof lot.endsAt === "number" && Date.now() >= lot.endsAt) return { ok: false, msg: "انتهى وقت هذه البطاقة" };
     const team = App.getTeam(teamId);
     if (!team) return { ok: false, msg: "فريق غير موجود" };
     const step = App.MARKET_BID_STEP;
@@ -1381,10 +1385,10 @@
     if (amount < minAllowed) return { ok: false, msg: "أقل مزايدة: " + fmtMoney(minAllowed) };
     if (amount > team.budget) return { ok: false, msg: "الميزانية لا تكفي (" + fmtMoney(team.budget) + ")" };
     lot.bids.push({ teamId, amount, at: new Date().toISOString() });
-    // مانع القنص: مزايدة في آخر نافذة تمدّد وقت هذه البطاقة وحدها
+    // مانع القنص: مزايدة في آخر دقيقة تمدّد وقت هذه البطاقة نصف دقيقة
     if (typeof lot.endsAt === "number") {
       const remaining = lot.endsAt - Date.now();
-      if (remaining > 0 && remaining <= App.AUCTION_EXTEND_WINDOW_MS) lot.endsAt += App.AUCTION_EXTEND_MS;
+      if (remaining > 0 && remaining <= App.CARD_EXTEND_WINDOW_MS) lot.endsAt += App.CARD_EXTEND_MS;
     }
     save();
     return { ok: true };
