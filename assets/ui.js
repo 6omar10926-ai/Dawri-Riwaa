@@ -1749,16 +1749,22 @@
       ? { icon: "🎁", name: "بطاقة غامضة", desc: "تُكشف عند الإرساء — زايد على المجهول!", eff: undefined, val: 0 }
       : { icon: snap.icon, name: snap.name, desc: snap.desc, eff: snap.eff, val: snap.val };
     const hiddenTag = lot.hidden ? `<span class="chip" style="font-size:10px;background:#3a2b5e;color:#d9c9ff">${isAdmin() ? "🙈 مخفية عن الفرق" : "🎁 غامضة"}</span>` : "";
+    // انتهى وقتها لكن لم تُرسَ بعد → مغلقة للمزايدة، بانتظار الإرساء
+    const expired = lot.status === "open" && typeof lot.endsAt === "number" && Date.now() >= lot.endsAt;
     const badge =
       lot.status === "sold"
         ? `<span class="badge sold">بيع لـ ${esc(App.getTeam(lot.winnerTeamId)?.name || "")} بـ ${fmtShort(lot.finalPrice)}</span>`
         : lot.status === "unsold"
         ? `<span class="badge unsold">لم تُبع</span>`
+        : expired
+        ? `<span class="badge unsold">⏱ انتهى الوقت — يُرسى الآن</span> ${hiddenTag}`
         : `<span class="badge open">مفتوحة</span> ${cardLotCountdownChip(lot)} ${hiddenTag}`;
     const minBid = App.cardLotMinBid(lot);
     const bidHint = `<div class="small muted" style="width:100%">أقل مزايدة ${fmtMoney(minBid)} • من مضاعفات ${fmtMoney(App.MARKET_BID_STEP)}</div>`;
     let controls = "";
-    if (lot.status === "open" && isAdmin()) {
+    if (expired) {
+      controls = "";
+    } else if (lot.status === "open" && isAdmin()) {
       controls = `<div class="row wrap" style="margin-top:10px;gap:8px">
         <select data-bid-team="${lot.id}" style="width:auto;min-width:120px">${teamOptions(highTeam ? highTeam.id : App.state.teams[0].id)}</select>
         <input type="number" data-bid-amount="${lot.id}" value="${minBid}" min="${minBid}" step="${App.MARKET_BID_STEP}" style="width:140px">
@@ -3388,8 +3394,9 @@
       el.textContent = "⏱ " + fmtCountdown(secs);
       el.classList.toggle("urgent", secs <= 10);
     });
-    // إرساء أي بطاقة انتهى وقتها (المشرف فقط لتفادي إرساء مزدوج)
-    if (isAdmin() && App.expireCardLots()) render();
+    // إرساء أي بطاقة انتهى وقتها فور بلوغ الصفر — المشرف أو رؤساء الفرق
+    // (تُحسم النتيجة نفسها لدى الجميع، وآخر كتابة تفوز، فلا إرساء مزدوج فعلي)
+    if ((isAdmin() || isPresident()) && App.expireCardLots()) render();
   }
 
   /* ---------- الإقلاع ---------- */
