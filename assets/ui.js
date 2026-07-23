@@ -3198,6 +3198,24 @@
   /* ---------- الإعدادات ---------- */
   function openSettings() {
     const c = App.state.club;
+    // النسخ الاحتياطية على هذا الجهاز
+    const backups = App.listBackups();
+    const bkFmt = (iso) => { try { return new Date(iso).toLocaleString("ar", { dateStyle: "short", timeStyle: "short" }); } catch (e) { return iso; } };
+    const backupsHTML = backups.length
+      ? backups.map((b) => {
+          const s = b.summary || {};
+          const meta = [
+            "أسبوع " + (s.week || "?"),
+            "فلوس " + fmtShort(s.money || 0),
+            (s.cards || 0) + " بطاقة",
+            (s.players || 0) + " لاعب",
+          ].join(" • ");
+          return `<div class="row between" style="padding:7px 0;border-bottom:1px solid var(--line);gap:8px">
+            <span style="flex:1;min-width:0"><b class="small">${esc(bkFmt(b.at))}</b><div class="small muted">${esc(meta)}</div></span>
+            <button class="btn sm" data-restore="${b.id}">استعادة</button>
+          </div>`;
+        }).join("")
+      : `<div class="small muted">لا نسخ بعد — تُحفظ تلقائيًا مع كل تغيير.</div>`;
     const rulesHTML = [...App.EVENTS.map((e) => [e.key, e.label]), ["win", App.RESULT_RULES.win.label], ["draw", App.RESULT_RULES.draw.label], ["loss", App.RESULT_RULES.loss.label], ["teamOfWeek", App.AWARD_RULES.teamOfWeek.label], ["clubLineup", App.AWARD_RULES.clubLineup.label]]
       .map(
         ([k, label]) => `<div class="stat-input">
@@ -3263,6 +3281,8 @@
         <input id="new-stat" placeholder="طاقة جديدة (مثال: التمركز)" style="flex:1">
         <button class="btn sm" id="add-stat">＋</button>
       </div>
+      <div class="section-title" style="margin:16px 0 8px"><h2 style="font-size:15px">🛟 النسخ الاحتياطية (هذا الجهاز)</h2><span class="hint">استعد أي لقطة سابقة</span></div>
+      <div class="card" style="padding:10px 12px">${backupsHTML}</div>
       <div class="section-title" style="margin:16px 0 8px"><h2 style="font-size:15px;color:var(--danger)">منطقة الخطر</h2></div>
       <div class="row wrap">
         <button class="btn danger sm" id="reset-all">حذف كل البيانات</button>
@@ -3300,6 +3320,18 @@
             App.save();
             close();
             openSettings();
+          };
+        });
+        root.querySelectorAll("[data-restore]").forEach((b) => {
+          b.onclick = () => {
+            const id = b.getAttribute("data-restore");
+            confirmBox("استعادة هذه النسخة؟ ستحلّ محلّ الحالة الحالية وتُرفع للسحابة.", () => {
+              const res = App.restoreBackup(id);
+              if (!res.ok) return toast(res.msg, "err");
+              close();
+              toast("تمّت الاستعادة ✅", "ok");
+              go("dashboard");
+            });
           };
         });
         $("#reset-all", root).onclick = () =>
