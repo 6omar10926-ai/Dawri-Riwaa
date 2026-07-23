@@ -302,6 +302,8 @@
   function roleTabs() {
     if (isAdmin())
       return [TAB.dashboard, TAB.teams, TAB.players, TAB.matches, TAB.fixtures, TAB.market, TAB.cardmarket, TAB.cards, TAB.ledger];
+    // وضع التخفّي: غير المشرف يشوف السوقين فقط
+    if (App.state.club && App.state.club.stealth) return [TAB.market, TAB.cardmarket];
     if (isPresident()) return [TAB.lineups, TAB.mycards, TAB.market, TAB.cardmarket];
     // عرض عام (سوق البطاقات للمشاهدة فقط — بدون مزايدة)
     return [TAB.dashboard, TAB.teams, TAB.players, TAB.matches, TAB.fixtures, TAB.cardmarket];
@@ -482,12 +484,20 @@
       )
       .join("");
 
+    const stealth = !!(App.state.club && App.state.club.stealth);
     const quickActions = isAdmin()
       ? `<div class="section-title"><h2>إجراءات سريعة</h2></div>
       <div class="grid cols-3">
         <button class="btn primary block" data-action="new-match">⚽ تسجيل مباراة</button>
         <button class="btn gold block" data-action="go-market">💰 سوق الانتقالات</button>
         <button class="btn block" data-action="awards">🏅 منح جوائز</button>
+      </div>
+      <div class="card ${stealth ? "" : "row between"}" style="margin-top:12px${stealth ? ";background:#1a1030;border-color:var(--brand)" : ""}">
+        ${stealth
+          ? `<div class="row between"><span><b>🥷 وضع التخفّي مُفعّل</b><div class="small muted">الأعضاء يشوفون سوق الانتقالات وسوق البطاقات فقط.</div></span>
+             <button class="btn sm danger" data-action="toggle-stealth">إيقاف التخفّي</button></div>`
+          : `<span><b>🥷 التخفّي</b><div class="small muted">يقفل كل التبويبات عن الأعضاء ويترك السوقين فقط.</div></span>
+             <button class="btn sm" data-action="toggle-stealth">تفعيل التخفّي</button>`}
       </div>`
       : "";
     const weekBox = isAdmin()
@@ -2107,7 +2117,7 @@
     "start-market", "close-market", "auction-screen", "export", "import",
     "add-fixture", "edit-fixture", "del-fixture", "fixture-done",
     "card-drop", "card-toggle", "card-edit", "card-del", "card-add", "card-grant", "card-remove", "card-uncommit", "card-exec",
-    "open-card-round", "close-card-round", "finalize-card-lot", "toggle-lock-teams",
+    "open-card-round", "close-card-round", "finalize-card-lot", "toggle-lock-teams", "toggle-stealth",
   ]);
 
   // غلاف يلتقط أي خطأ أثناء تنفيذ الإجراء (مثل فتح نافذة) فيُظهره كرسالة
@@ -2203,6 +2213,12 @@
         App.state.club.lockTeams = !App.state.club.lockTeams;
         App.save();
         toast(App.state.club.lockTeams ? "أُقفل تبويب الفرق للأعضاء 🔒" : "فُتح تبويب الفرق 🔓", "ok");
+        return render();
+      }
+      case "toggle-stealth": {
+        App.state.club.stealth = !App.state.club.stealth;
+        App.save();
+        toast(App.state.club.stealth ? "فُعّل وضع التخفّي 🥷 — الأعضاء على السوقين فقط" : "أُوقف وضع التخفّي", "ok");
         return render();
       }
       case "export": return doExport();
