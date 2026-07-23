@@ -403,11 +403,62 @@
   }
   function save() {
     saveLocal();
+    pushBackup();
     // خطّاف المزامنة السحابية (يضبطه sync.js عند توفّر Firebase)
     if (typeof App.afterSave === "function") App.afterSave();
   }
   App.save = save;
   App.saveLocal = saveLocal;
+
+  /* ---------- نسخ احتياطية محلية (حلقة على هذا الجهاز) ----------
+     تحفظ آخر لقطات للحالة عند كل تغيير محلي، لاستعادتها لو حصل رجوع/فقد. */
+  const BK_KEY = "dawri_backups_v1";
+  const BK_MAX = 12;         // عدد اللقطات المحفوظة
+  const BK_MIN_GAP = 30_000; // لا نلتقط لقطة أكثر من مرة كل 30 ثانية
+  let lastBk = 0;
+  function backupSummary(s) {
+    try {
+      const money = (s.teams || []).reduce((a, t) => a + (t.budget || 0), 0);
+      const cards = (s.teams || []).reduce((a, t) => a + ((t.cards || []).length), 0);
+      return {
+        week: (s.club && s.club.week) || 1,
+        players: (s.players || []).length,
+        matches: (s.matches || []).length,
+        money, cards,
+      };
+    } catch (e) { return {}; }
+  }
+  App.backupSummary = backupSummary;
+  function readBackups() {
+    try { const raw = localStorage.getItem(BK_KEY); const a = raw ? JSON.parse(raw) : []; return Array.isArray(a) ? a : []; }
+    catch (e) { return []; }
+  }
+  function pushBackup(force) {
+    try {
+      const now = Date.now();
+      if (!force && now - lastBk < BK_MIN_GAP) return;
+      lastBk = now;
+      const arr = readBackups();
+      arr.push({ id: uid(), at: new Date().toISOString(), summary: backupSummary(App.state), state: App.state });
+      while (arr.length > BK_MAX) arr.shift();
+      try { localStorage.setItem(BK_KEY, JSON.stringify(arr)); }
+      catch (e) {
+        // امتلأت المساحة → أسقط الأقدم حتى تكفي
+        while (arr.length > 1) { arr.shift(); try { localStorage.setItem(BK_KEY, JSON.stringify(arr)); return; } catch (e2) {} }
+      }
+    } catch (e) { /* تجاهل */ }
+  }
+  App.pushBackup = pushBackup;
+  // قائمة النسخ (الأحدث أولًا)
+  App.listBackups = () => readBackups().slice().reverse();
+  // استعادة نسخة: تصبح الحالة الحالية وتُرفع للسحابة (حارس النسخة ينشرها)
+  App.restoreBackup = function (id) {
+    const bk = App.listBackups().find((b) => b.id === id);
+    if (!bk || !bk.state) return { ok: false, msg: "النسخة غير موجودة" };
+    App.state = migrate(bk.state);
+    save();
+    return { ok: true };
+  };
 
   // تطبيق حالة قادمة من السحابة (بدون إعادة رفعها) — يستخدمها sync.js
   App.applyCloudState = function (obj) {
