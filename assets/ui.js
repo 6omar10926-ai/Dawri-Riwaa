@@ -653,15 +653,29 @@
     return `<span class="auction-countdown js-auction-countdown${secs <= 10 ? " urgent" : ""}">${secs}ث</span>`;
   }
 
-  // شريط أنصبة الفرق (كم اشترى كل فريق من أصل الحد)
+  // شريط أنصبة الفرق (كم اشترى كل فريق من أصل حدّه الخاص)
   function capChips(mk) {
-    const cap = App.marketMaxPerTeam(mk);
     return `<div class="row wrap" style="gap:6px;margin:4px 0 2px">
       ${App.state.teams.map((t) => {
+        const cap = App.marketTeamCap(t.id, mk);
         const n = App.marketTeamPurchases(t.id, mk);
         const full = n >= cap;
         return `<span class="chip${full ? " muted" : ""}"><span style="width:9px;height:9px;border-radius:3px;background:${t.color};display:inline-block"></span> ${esc(t.name)} ${n}/${cap}${full ? " ✓" : ""}</span>`;
       }).join("")}
+    </div>`;
+  }
+
+  // تحكّم المشرف بحدّ شراء كل فريق (يظهر في التحضير وأثناء السوق)
+  function teamCapControlsHTML(mk) {
+    return `<div class="card" style="padding:10px 12px">
+      <div class="small muted" style="margin-bottom:6px">حدّ الشراء لكل فريق في هذه الجولة (عدد اللاعبين):</div>
+      <div class="row wrap" style="gap:10px">
+        ${App.state.teams.map((t) => `<label class="row" style="gap:6px;align-items:center">
+          <span style="width:10px;height:10px;border-radius:3px;background:${t.color};display:inline-block"></span>
+          <span class="small">${esc(t.name)}</span>
+          <input type="number" min="0" step="1" data-teamcap="${t.id}" value="${App.marketTeamCap(t.id, mk)}" style="width:64px">
+        </label>`).join("")}
+      </div>
     </div>`;
   }
 
@@ -697,9 +711,10 @@
       : `<span class="hint">بانتظار أن يبدأ المشرف المزاد…</span>`;
     return `<div class="section-title"><h2>سوق الانتقالات</h2><span class="hint">تحضير${isAdmin() ? " — " + mk.lots.length + " لاعب" : ""}</span><div class="spacer"></div>${marketHistoryBtn()}</div>
       <div class="card">
-        <p class="muted" style="margin-top:0">اللاعبون جاهزون للمزاد. لكل لاعب ${App.AUCTION_DURATION_MS / 1000} ثانية، وأي مزايدة في آخر ${App.AUCTION_EXTEND_WINDOW_MS / 1000} ثوانٍ تُمدّد الوقت ${App.AUCTION_EXTEND_MS / 1000} ثوانٍ. حد الشراء ${App.marketMaxPerTeam(mk)} لاعبين لكل فريق.</p>
+        <p class="muted" style="margin-top:0">اللاعبون جاهزون للمزاد. لكل لاعب ${App.AUCTION_DURATION_MS / 1000} ثانية، وأي مزايدة في آخر ${App.AUCTION_EXTEND_WINDOW_MS / 1000} ثوانٍ تُمدّد الوقت ${App.AUCTION_EXTEND_MS / 1000} ثوانٍ.</p>
         <div class="row wrap">${startBtn}</div>
       </div>
+      ${isAdmin() ? teamCapControlsHTML(mk) : ""}
       <div class="grid cols-2">${cards}</div>`;
   }
 
@@ -754,7 +769,7 @@
              </div>`;
         } else if (lot.status === "open" && isPresident() && myTeam) {
           bidControls = (lot.type !== "card" && App.marketTeamAtCap(myTeam.id, mk))
-            ? `<div class="small muted" style="margin-top:12px">✓ استنفدت نصيبك (${App.marketMaxPerTeam(mk)} لاعبين) في هذه الجولة.</div>`
+            ? `<div class="small muted" style="margin-top:12px">✓ استنفدت نصيبك (${App.marketTeamCap(myTeam.id, mk)} لاعبين) في هذه الجولة.</div>`
             : `<div class="row wrap" style="margin-top:12px;gap:8px">
                <input type="hidden" data-bid-team="${lot.id}" value="${myTeam.id}">
                <span class="chip"><span style="width:10px;height:10px;border-radius:3px;background:${myTeam.color};display:inline-block"></span> ميزانيتك: ${fmtMoney(myTeam.budget)}</span>
@@ -787,6 +802,7 @@
         ${marketHistoryBtn()}
       </div>
       ${capChips(mk)}
+      ${isAdmin() ? teamCapControlsHTML(mk) : ""}
       <div class="grid cols-2">${lots}</div>
       ${hiddenHint}`;
   }
@@ -2061,6 +2077,13 @@
     document.querySelectorAll("[data-lfilter]").forEach((b) => {
       b.onclick = () => {
         ledgerFilter = b.getAttribute("data-lfilter");
+        render();
+      };
+    });
+    // حدّ شراء الفريق في السوق (المشرف) — يُحفظ عند التغيير
+    document.querySelectorAll("[data-teamcap]").forEach((inp) => {
+      inp.onchange = () => {
+        App.setMarketTeamCap(inp.getAttribute("data-teamcap"), inp.value);
         render();
       };
     });

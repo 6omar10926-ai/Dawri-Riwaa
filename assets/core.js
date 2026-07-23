@@ -358,6 +358,7 @@
     // حقول المزاد بالمؤقّت: سوق نشط قديم بلا started يُعتبر بدأ (إرساء يدوي يعمل)
     if (typeof s.market.started !== "boolean") s.market.started = !!s.market.active;
     if (typeof s.market.maxPerTeam !== "number") s.market.maxPerTeam = App.MARKET_MAX_PER_TEAM;
+    if (!s.market.caps || typeof s.market.caps !== "object") s.market.caps = {};
     if (typeof s.market.endsAt !== "number") s.market.endsAt = null;
     if (typeof s.market.currentIndex !== "number") s.market.currentIndex = 0;
     // سوق نشط بلا لاعبين لا معنى له — نعتبره مغلقًا حتى لا تظهر صفحة فارغة
@@ -910,6 +911,7 @@
       currentIndex: 0,
       endsAt: null,     // وقت انتهاء مؤقّت اللاعب الحالي (ms) — يُضبط عند البدء
       maxPerTeam: App.MARKET_MAX_PER_TEAM,
+      caps: {},         // حدّ شراء مخصّص لكل فريق {teamId: عدد} (يضبطه المشرف)
       lots: playerIds.map((pid) => ({
         id: uid(),
         playerId: pid,
@@ -934,9 +936,23 @@
     mk = mk || App.state.market;
     return typeof (mk && mk.maxPerTeam) === "number" ? mk.maxPerTeam : App.MARKET_MAX_PER_TEAM;
   };
+  // حدّ شراء هذا الفريق تحديدًا في الجولة (إن حُدّد له، وإلا الحدّ العام)
+  App.marketTeamCap = function (teamId, mk) {
+    mk = mk || App.state.market;
+    if (mk && mk.caps && typeof mk.caps[teamId] === "number") return mk.caps[teamId];
+    return App.marketMaxPerTeam(mk);
+  };
+  // يضبط حدّ شراء فريق معيّن (المشرف — قبل بدء السوق أو أثناءه)
+  App.setMarketTeamCap = function (teamId, n) {
+    const mk = App.state.market;
+    if (!mk) return;
+    if (!mk.caps || typeof mk.caps !== "object") mk.caps = {};
+    mk.caps[teamId] = Math.max(0, Math.round(Number(n) || 0));
+    save();
+  };
   App.marketTeamAtCap = function (teamId, mk) {
     mk = mk || App.state.market;
-    return App.marketTeamPurchases(teamId, mk) >= App.marketMaxPerTeam(mk);
+    return App.marketTeamPurchases(teamId, mk) >= App.marketTeamCap(teamId, mk);
   };
 
   // يضبط وقت انتهاء مؤقّت اللاعب/البطاقة الحالية (أو يُفرغه لو انتهى السوق).
@@ -1004,7 +1020,7 @@
     if (!team) return { ok: false, msg: "فريق غير موجود" };
     // حد الفريق: لا يشتري أكثر من العدد المسموح من اللاعبين في الجولة (لا يشمل البطاقات)
     if (lot.type !== "card" && App.marketTeamAtCap(teamId, mk))
-      return { ok: false, msg: "الفريق استنفد نصيبه (" + App.marketMaxPerTeam(mk) + " لاعبين) في هذه الجولة" };
+      return { ok: false, msg: "الفريق استنفد نصيبه (" + App.marketTeamCap(teamId, mk) + " لاعبين) في هذه الجولة" };
     const step = App.MARKET_BID_STEP;
     const minAllowed = App.marketMinBid(lot);
     if (amount % step !== 0)
