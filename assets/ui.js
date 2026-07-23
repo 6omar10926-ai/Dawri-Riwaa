@@ -520,6 +520,12 @@
   }
 
   function viewTeams() {
+    const locked = !!(App.state.club && App.state.club.lockTeams);
+    // مقفلة لغير المشرف حين يفعّل المشرف القفل
+    if (locked && !isAdmin()) {
+      return `<div class="section-title"><h2>الفرق</h2></div>
+        <div class="empty"><div class="big">🔒</div>تبويب الفرق مقفول حاليًا.<br><span class="small muted">يفتحه المشرف.</span></div>`;
+    }
     const cards = App.state.teams
       .map((t) => {
         const players = App.teamPlayers(t.id);
@@ -550,7 +556,11 @@
         </div>`;
       })
       .join("");
-    return `<div class="section-title"><h2>الفرق</h2><span class="hint">3 فرق • 6-8 لاعبين لكل فريق</span></div>
+    const lockBtn = isAdmin()
+      ? `<button class="btn sm ${locked ? "danger" : "ghost"}" data-action="toggle-lock-teams">${locked ? "🔒 مقفول للأعضاء — اضغط للفتح" : "🔓 قفل الفرق للأعضاء"}</button>`
+      : "";
+    return `<div class="section-title"><h2>الفرق</h2><span class="hint">3 فرق • 6-8 لاعبين لكل فريق</span><div class="spacer"></div>${lockBtn}</div>
+      ${isAdmin() && locked ? `<div class="card" style="background:#2a1520;border-color:var(--danger)"><span class="small">🔒 التبويب مقفول حاليًا عن رؤساء الأندية والعرض العام (أنت تشوفه كمشرف).</span></div>` : ""}
       <div class="grid">${cards}</div>`;
   }
 
@@ -2074,7 +2084,7 @@
     "start-market", "close-market", "auction-screen", "export", "import",
     "add-fixture", "edit-fixture", "del-fixture", "fixture-done",
     "card-drop", "card-toggle", "card-edit", "card-del", "card-add", "card-grant", "card-remove", "card-uncommit", "card-exec",
-    "open-card-round", "close-card-round", "finalize-card-lot",
+    "open-card-round", "close-card-round", "finalize-card-lot", "toggle-lock-teams",
   ]);
 
   // غلاف يلتقط أي خطأ أثناء تنفيذ الإجراء (مثل فتح نافذة) فيُظهره كرسالة
@@ -2166,6 +2176,12 @@
         return confirmBox("إرساء هذه البطاقة على أعلى مزايد الآن؟", () => { App.finalizeCardLot(id); toast("تم الإرساء", "ok"); render(); });
       case "close-card-round":
         return confirmBox("إغلاق جولة البطاقات؟ تُرسى كل البطاقات على أعلى مزايد، وما بلا مزايدة يبقى بلا بيع.", () => { App.closeCardMarket(); toast("أُغلقت الجولة", "ok"); render(); });
+      case "toggle-lock-teams": {
+        App.state.club.lockTeams = !App.state.club.lockTeams;
+        App.save();
+        toast(App.state.club.lockTeams ? "أُقفل تبويب الفرق للأعضاء 🔒" : "فُتح تبويب الفرق 🔓", "ok");
+        return render();
+      }
       case "export": return doExport();
       case "import": return doImport();
       // المباريات القادمة

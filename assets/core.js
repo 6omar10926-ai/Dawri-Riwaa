@@ -261,7 +261,7 @@
     }));
     return {
       version: 1,
-      club: { name: "دوري رواء", currency: "﷼", season: 1, week: 1, adminCode: App.DEFAULT_ADMIN_CODE },
+      club: { name: "دوري رواء", currency: "﷼", season: 1, week: 1, adminCode: App.DEFAULT_ADMIN_CODE, lockTeams: false },
       teams,
       players: [],
       statDefs: App.DEFAULT_STATS.slice(),
